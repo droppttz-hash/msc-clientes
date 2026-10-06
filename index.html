@@ -44,7 +44,9 @@
       <nav class="abas">
         <a href="#/clientes" data-aba="clientes">Clientes</a>
         <a href="#/compras" data-aba="compras">Compras</a>
+        <a href="#/caixa" data-aba="caixa">Caixa</a>
         <a href="#/aniversariantes" data-aba="aniversariantes">Aniversariantes</a>
+        <a href="#/config" data-aba="config">Configurações</a>
       </nav>
       <button class="btn btn-ghost btn-sm" id="btn-sair" type="button">Sair</button>
     </header>
@@ -113,8 +115,11 @@
       </header>
       <p class="muted" id="dlg-compra-cliente"></p>
       <div class="grade">
-        <label class="col-2">O que comprou / serviço feito *
-          <input name="descricao" required placeholder="Ex.: iPhone 13 128GB seminovo + película">
+        <label>Categoria *
+          <select name="categoria_id" required></select>
+        </label>
+        <label>O que comprou *
+          <input name="descricao" required placeholder="Ex.: iPhone 13 128GB seminovo">
         </label>
         <label>Valor *
           <input name="valor" inputmode="numeric" placeholder="R$ 0,00" data-mascara="dinheiro" required>
@@ -147,27 +152,74 @@
     </form>
   </dialog>
 
+  <!-- MODAL LANÇAMENTO DE CAIXA -->
+  <dialog id="dlg-lanc" class="modal">
+    <form id="form-lanc" method="dialog" novalidate>
+      <header class="modal-topo">
+        <h2 id="dlg-lanc-titulo">Nova saída</h2>
+        <button type="button" class="x" data-fechar aria-label="Fechar">×</button>
+      </header>
+      <div class="segmento" role="radiogroup" aria-label="Tipo">
+        <label><input type="radio" name="tipo" value="saida" checked> Saída (despesa)</label>
+        <label><input type="radio" name="tipo" value="entrada"> Entrada (não é venda)</label>
+      </div>
+      <div class="grade">
+        <label>Categoria *
+          <select name="categoria_id" required></select>
+        </label>
+        <label>Descrição *
+          <input name="descricao" required placeholder="Ex.: Aluguel de outubro">
+        </label>
+        <label>Valor *
+          <input name="valor" inputmode="numeric" placeholder="R$ 0,00" data-mascara="dinheiro" required>
+        </label>
+        <label>Data *
+          <input name="data" type="date" required>
+        </label>
+        <label>Forma de pagamento *
+          <select name="forma_pagamento" required>
+            <option value="pix">PIX</option>
+            <option value="dinheiro">Dinheiro</option>
+            <option value="debito">Cartão de débito</option>
+            <option value="credito">Cartão de crédito</option>
+            <option value="boleto">Boleto</option>
+            <option value="outro">Outro</option>
+          </select>
+        </label>
+        <label>Observação
+          <input name="observacao">
+        </label>
+      </div>
+      <p class="erro" id="lanc-erro" hidden></p>
+      <footer class="modal-rodape">
+        <button type="button" class="btn btn-ghost" data-fechar>Cancelar</button>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+      </footer>
+    </form>
+  </dialog>
+
   <!-- MODAL CANCELAR COMPRA -->
   <dialog id="dlg-cancelar" class="modal modal-sm">
     <form id="form-cancelar" method="dialog" novalidate>
       <header class="modal-topo">
-        <h2>Cancelar compra</h2>
+        <h2 id="dlg-cancelar-titulo">Cancelar compra</h2>
         <button type="button" class="x" data-fechar aria-label="Fechar">×</button>
       </header>
       <p class="muted" id="dlg-cancelar-info"></p>
       <label>Motivo do cancelamento *
         <input name="motivo" required placeholder="Ex.: devolução, lançado errado…">
       </label>
-      <p class="muted pequeno">A compra continua no histórico, marcada como cancelada, e sai dos totais.</p>
+      <p class="muted pequeno">O registro continua no histórico, marcado como cancelado, e sai dos totais.</p>
       <p class="erro" id="cancelar-erro" hidden></p>
       <footer class="modal-rodape">
         <button type="button" class="btn btn-ghost" data-fechar>Voltar</button>
-        <button type="submit" class="btn btn-danger" value="cancelar">Cancelar compra</button>
+        <button type="submit" class="btn btn-danger" value="cancelar">Confirmar cancelamento</button>
       </footer>
     </form>
   </dialog>
 
   <div id="toast" class="toast" role="status" hidden></div>
+  <div id="dica-grafico" class="dica-grafico" role="tooltip" hidden></div>
 
   <script type="module" src="app.js"></script>
 </body>

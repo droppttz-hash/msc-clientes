@@ -8,6 +8,20 @@ const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Ag
 let sb = null;
 let logado = false;
 
+// Categorias (produto, despesa, outras entradas) — carregadas uma vez e recarregadas ao editar
+let CATS = null;
+async function categorias(recarregar = false) {
+  if (CATS && !recarregar) return CATS;
+  const { data, error } = await sb.from('categorias').select('*').order('ordem').order('nome');
+  if (error) throw error;
+  CATS = data;
+  return CATS;
+}
+function opcoesCategoria(lista, tipo, atualId) {
+  const itens = lista.filter((c) => c.tipo === tipo && (c.ativo || c.id === atualId));
+  return '<option value="">Escolha…</option>' + itens.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('');
+}
+
 // ===================================================================
 // Utilidades
 // ===================================================================
@@ -67,6 +81,8 @@ function msgErro(error) {
   if (/valor_centavos_check/.test(m)) return 'O valor precisa ser maior que zero.';
   if (/parcelas/.test(m)) return 'Parcelas só podem ser usadas no cartão de crédito (1 a 24).';
   if (/cancelamento_consistente/.test(m)) return 'Informe o motivo do cancelamento.';
+  if (/categorias_tipo_nome_uk|duplicate key/.test(m)) return 'Já existe uma categoria com esse nome.';
+  if (/Categoria não combina/.test(m)) return 'Escolha uma categoria do tipo certo (despesa para saída, entrada para entrada).';
   if (/Failed to fetch|NetworkError/i.test(m)) return 'Sem conexão com o servidor. Verifique a internet.';
   return error?.message || 'Algo deu errado. Tente de novo.';
 }
@@ -146,12 +162,14 @@ window.addEventListener('hashchange', () => logado && render());
 
 function render() {
   const h = location.hash || '#/clientes';
-  const aba = h.startsWith('#/compras') ? 'compras' : h.startsWith('#/aniversariantes') ? 'aniversariantes' : 'clientes';
+  const aba = ['compras', 'caixa', 'aniversariantes', 'config'].find((a) => h.startsWith(`#/${a}`)) || 'clientes';
   $$('.abas a').forEach((a) => a.classList.toggle('ativa', a.dataset.aba === aba));
   window.scrollTo(0, 0);
   const m = h.match(/^#\/cliente\/([0-9a-f-]{36})$/i);
   if (m) return telaCliente(m[1]);
   if (aba === 'compras') return telaCompras();
+  if (aba === 'caixa') return telaCaixa();
+  if (aba === 'config') return telaConfig();
   if (aba === 'aniversariantes') return telaAniversariantes();
   return telaClientes();
 }
@@ -284,7 +302,7 @@ async function telaCliente(id) {
   conteudo.innerHTML = '<div class="vazio">Carregando…</div>';
   const [{ data: cli, error: e1 }, { data: compras, error: e2 }] = await Promise.all([
     sb.from('clientes_resumo').select('*').eq('id', id).maybeSingle(),
-    sb.from('compras').select('*').eq('cliente_id', id).order('data', { ascending: false }).order('numero', { ascending: false }),
+    sb.from('compras').select('*, categorias(nome)').eq('cliente_id', id).order('data', { ascending: false }).order('numero', { ascending: false }),
   ]);
   if (e1 || e2) { conteudo.innerHTML = `<div class="vazio">${esc(msgErro(e1 || e2))}</div>`; return; }
   if (!cli) { conteudo.innerHTML = '<div class="vazio"><b>Cliente não encontrado</b><a href="#/clientes">Voltar para a lista</a></div>'; return; }
@@ -342,8 +360,10 @@ async function telaCliente(id) {
   $('#btn-nova-compra').addEventListener('click', () => abrirCompra(cli, null));
   $('#btn-ativo-cli').addEventListener('click', () => alternarAtivo(cli));
   $$('[data-editar-compra]').forEach((b) => b.addEventListener('click', () => abrirCompra(cli, compras.find((c) => c.id === b.dataset.editarCompra))));
-  $$('[data-cancelar-compra]').forEach((b) => b.addEventListener('click', () => abrirCancelar(compras.find((c) => c.id === b.dataset.cancelarCompra))));
+  $$('[data-cancelar-compra]').forEach((b) => b.addEventListener('click', () => abrirCancelarCompra(compras.find((c) => c.id === b.dataset.cancelarCompra))));
 }
+
+const tagCategoria = (nome) => (nome ? `<span class="tag cinza">${esc(nome)}</span>` : '<span class="tag cinza">sem categoria</span>');
 
 function linhaCompra(c) {
   const cancelada = c.status === 'cancelada';
@@ -351,7 +371,7 @@ function linhaCompra(c) {
   return `
     <tr class="${cancelada ? 'cancelada' : ''}">
       <td>${fmtData(c.data)}<div class="muted pequeno">nº ${c.numero}</div></td>
-      <td><span class="desc">${esc(c.descricao)}</span>
+      <td><span class="desc">${esc(c.descricao)}</span> ${tagCategoria(c.categorias?.nome)}
         ${c.observacao ? `<div class="muted pequeno">${esc(c.observacao)}</div>` : ''}
         ${cancelada ? `<div class="pequeno"><span class="tag cancelada">cancelada</span> ${esc(c.motivo_cancelamento)}</div>` : ''}</td>
       <td class="esconder-cel"><span class="tag">${pag}</span></td>
@@ -495,12 +515,17 @@ formCompra.forma_pagamento.addEventListener('change', () => {
   $('#campo-parcelas').hidden = formCompra.forma_pagamento.value !== 'credito';
 });
 
-function abrirCompra(cliente, compra) {
+// cliente = null → venda balcão (sem cliente cadastrado)
+async function abrirCompra(cliente, compra) {
   compraCtx = { cliente, compra };
   formCompra.reset();
   mostrarErro($('#compra-erro'), '');
-  $('#dlg-compra-titulo').textContent = compra ? `Editar compra nº ${compra.numero}` : 'Nova compra';
-  $('#dlg-compra-cliente').textContent = `Cliente: ${cliente.nome}`;
+  try {
+    formCompra.categoria_id.innerHTML = opcoesCategoria(await categorias(), 'venda', compra?.categoria_id);
+  } catch (err) { return toast(msgErro(err), 'erro'); }
+  $('#dlg-compra-titulo').textContent = compra ? `Editar venda nº ${compra.numero}` : cliente ? 'Nova compra' : 'Venda balcão';
+  $('#dlg-compra-cliente').textContent = cliente ? `Cliente: ${cliente.nome}` : 'Sem cliente cadastrado (venda rápida no balcão)';
+  if (compra?.categoria_id) formCompra.categoria_id.value = compra.categoria_id;
   formCompra.data.value = compra?.data ?? hojeSP();
   formCompra.data.max = hojeSP();
   if (compra) {
@@ -512,7 +537,7 @@ function abrirCompra(cliente, compra) {
   }
   $('#campo-parcelas').hidden = formCompra.forma_pagamento.value !== 'credito';
   dlgCompra.showModal();
-  formCompra.descricao.focus();
+  (compra ? formCompra.descricao : formCompra.categoria_id).focus();
 }
 
 formCompra.addEventListener('submit', async (e) => {
@@ -522,6 +547,7 @@ formCompra.addEventListener('submit', async (e) => {
   const valor = Number(soDigitos(f.valor.value) || 0);
   const forma = f.forma_pagamento.value;
   const dados = {
+    categoria_id: f.categoria_id.value || null,
     descricao: f.descricao.value.trim().replace(/\s+/g, ' '),
     valor_centavos: valor,
     data: f.data.value,
@@ -529,6 +555,7 @@ formCompra.addEventListener('submit', async (e) => {
     parcelas: forma === 'credito' ? Number(f.parcelas.value) : 1,
     observacao: f.observacao.value.trim() || null,
   };
+  if (!dados.categoria_id) return mostrarErro(erroEl, 'Escolha a categoria.');
   if (dados.descricao.length < 2) return mostrarErro(erroEl, 'Descreva o que foi comprado.');
   if (valor <= 0) return mostrarErro(erroEl, 'Informe o valor da compra.');
   if (!dados.data) return mostrarErro(erroEl, 'Informe a data.');
@@ -538,11 +565,11 @@ formCompra.addEventListener('submit', async (e) => {
   btn.disabled = true;
   const { error } = compraCtx.compra
     ? await sb.from('compras').update(dados).eq('id', compraCtx.compra.id)
-    : await sb.from('compras').insert({ ...dados, cliente_id: compraCtx.cliente.id });
+    : await sb.from('compras').insert({ ...dados, cliente_id: compraCtx.cliente?.id ?? null });
   btn.disabled = false;
   if (error) return mostrarErro(erroEl, msgErro(error));
   dlgCompra.close();
-  toast(compraCtx.compra ? 'Compra atualizada' : `Compra de ${fmtMoeda(valor)} lançada`);
+  toast(compraCtx.compra ? 'Venda atualizada' : `Venda de ${fmtMoeda(valor)} lançada`);
   render();
 });
 
@@ -551,27 +578,95 @@ formCompra.addEventListener('submit', async (e) => {
 // ===================================================================
 const dlgCancelar = $('#dlg-cancelar');
 const formCancelar = $('#form-cancelar');
-let compraCancelando = null;
+let cancelando = null; // { tabela: 'compras' | 'lancamentos', item }
 
-function abrirCancelar(compra) {
-  compraCancelando = compra;
+function abrirCancelar(tabela, item) {
+  cancelando = { tabela, item };
   formCancelar.reset();
   mostrarErro($('#cancelar-erro'), '');
-  $('#dlg-cancelar-info').textContent = `Compra nº ${compra.numero} · ${fmtData(compra.data)} · ${compra.descricao} · ${fmtMoeda(compra.valor_centavos)}`;
+  const nome = tabela === 'compras' ? 'venda' : item.tipo === 'saida' ? 'saída' : 'entrada';
+  $('#dlg-cancelar-titulo').textContent = `Cancelar ${nome}`;
+  $('#dlg-cancelar-info').textContent = `Nº ${item.numero} · ${fmtData(item.data)} · ${item.descricao} · ${fmtMoeda(item.valor_centavos)}`;
   dlgCancelar.showModal();
   formCancelar.motivo.focus();
 }
+const abrirCancelarCompra = (compra) => abrirCancelar('compras', compra);
 
 formCancelar.addEventListener('submit', async (e) => {
   e.preventDefault();
   const motivo = formCancelar.motivo.value.trim();
   if (motivo.length < 3) return mostrarErro($('#cancelar-erro'), 'Escreva o motivo do cancelamento.');
-  const { error } = await sb.from('compras')
-    .update({ status: 'cancelada', motivo_cancelamento: motivo, cancelada_em: new Date().toISOString() })
-    .eq('id', compraCancelando.id);
+  const agora = new Date().toISOString();
+  const mudanca = cancelando.tabela === 'compras'
+    ? { status: 'cancelada', motivo_cancelamento: motivo, cancelada_em: agora }
+    : { status: 'cancelado', motivo_cancelamento: motivo, cancelado_em: agora };
+  const { error } = await sb.from(cancelando.tabela).update(mudanca).eq('id', cancelando.item.id);
   if (error) return mostrarErro($('#cancelar-erro'), msgErro(error));
   dlgCancelar.close();
-  toast('Compra cancelada');
+  toast('Cancelado. Continua no histórico e saiu dos totais.');
+  render();
+});
+
+// ===================================================================
+// Modal: lançamento de caixa (saída / entrada que não é venda)
+// ===================================================================
+const dlgLanc = $('#dlg-lanc');
+const formLanc = $('#form-lanc');
+let lancEditando = null;
+
+async function preencherCategoriasLanc(atualId) {
+  const tipo = formLanc.querySelector('input[name=tipo]:checked').value;
+  formLanc.categoria_id.innerHTML = opcoesCategoria(await categorias(), tipo === 'saida' ? 'despesa' : 'receita', atualId);
+  if (atualId) formLanc.categoria_id.value = atualId;
+  $('#dlg-lanc-titulo').textContent = `${lancEditando ? 'Editar' : 'Nova'} ${tipo === 'saida' ? 'saída' : 'entrada'}`;
+}
+$$('input[name=tipo]', formLanc).forEach((r) => r.addEventListener('change', () => preencherCategoriasLanc()));
+
+async function abrirLancamento(tipo, lanc = null) {
+  lancEditando = lanc;
+  formLanc.reset();
+  mostrarErro($('#lanc-erro'), '');
+  formLanc.querySelector(`input[name=tipo][value=${lanc?.tipo ?? tipo}]`).checked = true;
+  $$('input[name=tipo]', formLanc).forEach((r) => { r.disabled = !!lanc; });
+  try { await preencherCategoriasLanc(lanc?.categoria_id); } catch (err) { return toast(msgErro(err), 'erro'); }
+  formLanc.data.value = lanc?.data ?? hojeSP();
+  formLanc.data.max = hojeSP();
+  if (lanc) {
+    formLanc.descricao.value = lanc.descricao;
+    formLanc.valor.value = fmtMoeda(lanc.valor_centavos);
+    formLanc.forma_pagamento.value = lanc.forma_pagamento;
+    formLanc.observacao.value = lanc.observacao ?? '';
+  }
+  dlgLanc.showModal();
+  formLanc.categoria_id.focus();
+}
+
+formLanc.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = formLanc;
+  const erroEl = $('#lanc-erro');
+  const dados = {
+    tipo: f.querySelector('input[name=tipo]:checked').value,
+    categoria_id: f.categoria_id.value || null,
+    descricao: f.descricao.value.trim().replace(/\s+/g, ' '),
+    valor_centavos: Number(soDigitos(f.valor.value) || 0),
+    data: f.data.value,
+    forma_pagamento: f.forma_pagamento.value,
+    observacao: f.observacao.value.trim() || null,
+  };
+  if (!dados.categoria_id) return mostrarErro(erroEl, 'Escolha a categoria.');
+  if (dados.descricao.length < 2) return mostrarErro(erroEl, 'Escreva uma descrição.');
+  if (dados.valor_centavos <= 0) return mostrarErro(erroEl, 'Informe o valor.');
+  if (!dados.data || dados.data > hojeSP()) return mostrarErro(erroEl, 'Informe uma data até hoje.');
+  const btn = $('button[type=submit]', f);
+  btn.disabled = true;
+  const { error } = lancEditando
+    ? await sb.from('lancamentos').update(dados).eq('id', lancEditando.id)
+    : await sb.from('lancamentos').insert(dados);
+  btn.disabled = false;
+  if (error) return mostrarErro(erroEl, msgErro(error));
+  dlgLanc.close();
+  toast(`${dados.tipo === 'saida' ? 'Saída' : 'Entrada'} de ${fmtMoeda(dados.valor_centavos)} registrada`);
   render();
 });
 
@@ -579,13 +674,23 @@ formCancelar.addEventListener('submit', async (e) => {
 $$('[data-fechar]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()));
 
 // ===================================================================
-// Tela: todas as compras (por período)
+// Tela: todas as vendas (por período e categoria)
 // ===================================================================
-const estadoCompras = { de: null, ate: null, canceladas: false };
+const estadoCompras = { de: null, ate: null, canceladas: false, categoria: '' };
 
-function telaCompras() {
+function seletorPeriodo(estado, idPrefixo) {
+  return `
+    <div class="periodo">
+      <label>De<input type="date" id="${idPrefixo}-de" value="${estado.de}"></label>
+      <label>Até<input type="date" id="${idPrefixo}-ate" value="${estado.ate}"></label>
+    </div>`;
+}
+
+async function telaCompras() {
   const hoje = hojeSP();
   if (!estadoCompras.de) { estadoCompras.de = hoje.slice(0, 8) + '01'; estadoCompras.ate = hoje; }
+  let cats = [];
+  try { cats = await categorias(); } catch { /* segue sem filtro */ }
   conteudo.innerHTML = `
     <div class="barra">
       <h1>Compras</h1>
@@ -593,17 +698,21 @@ function telaCompras() {
         <button class="btn btn-ghost btn-sm" data-periodo="hoje" type="button">Hoje</button>
         <button class="btn btn-ghost btn-sm" data-periodo="mes" type="button">Este mês</button>
         <button class="btn btn-ghost btn-sm" data-periodo="passado" type="button">Mês passado</button>
+        <button class="btn btn-primary btn-sm" id="btn-venda-balcao" type="button">+ Venda balcão</button>
       </div>
     </div>
     <div class="barra">
       <div class="periodo">
-        <label>De<input type="date" id="per-de" value="${estadoCompras.de}"></label>
-        <label>Até<input type="date" id="per-ate" value="${estadoCompras.ate}"></label>
+        ${seletorPeriodo(estadoCompras, 'per')}
+        <label>Categoria<select id="filtro-cat" style="width:auto">
+          <option value="">Todas</option>
+          ${cats.filter((c) => c.tipo === 'venda').map((c) => `<option value="${c.id}" ${estadoCompras.categoria === c.id ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}
+        </select></label>
       </div>
       <label class="check"><input type="checkbox" id="chk-canceladas" ${estadoCompras.canceladas ? 'checked' : ''}> Mostrar canceladas</label>
     </div>
     <div id="compras-corpo"><div class="vazio">Carregando…</div></div>
-    <p class="muted pequeno" style="margin-top:12px">Para lançar uma compra, abra o cliente na aba Clientes.</p>`;
+    <p class="muted pequeno" style="margin-top:12px">Venda para cliente cadastrado: abra o cliente na aba Clientes. Venda rápida sem cadastro: “+ Venda balcão”.</p>`;
 
   const atualizar = () => {
     estadoCompras.de = $('#per-de').value;
@@ -612,7 +721,9 @@ function telaCompras() {
   };
   $('#per-de').addEventListener('change', atualizar);
   $('#per-ate').addEventListener('change', atualizar);
+  $('#filtro-cat').addEventListener('change', (e) => { estadoCompras.categoria = e.target.value; carregarCompras(); });
   $('#chk-canceladas').addEventListener('change', (e) => { estadoCompras.canceladas = e.target.checked; carregarCompras(); });
+  $('#btn-venda-balcao').addEventListener('click', () => abrirCompra(null, null));
   $$('[data-periodo]').forEach((b) => b.addEventListener('click', () => {
     const p = b.dataset.periodo;
     if (p === 'hoje') { estadoCompras.de = hoje; estadoCompras.ate = hoje; }
@@ -625,48 +736,331 @@ function telaCompras() {
   carregarCompras();
 }
 
+function listaBarras(pares, cor) {
+  if (!pares.length) return '<p class="muted pequeno" style="padding:14px 16px">Nada no período.</p>';
+  const max = Math.max(...pares.map(([, v]) => v));
+  return `<div class="lista-barras">${pares.map(([nome, v]) => `
+    <div class="item"><span>${esc(nome)}</span><span class="valor">${fmtMoeda(v)}</span>
+      <div class="trilho"><div class="enchimento" style="width:${Math.max(2, (v / max) * 100)}%;background:${cor}"></div></div></div>`).join('')}</div>`;
+}
+const somarPor = (lista, chave) => {
+  const m = {};
+  for (const x of lista) { const k = chave(x); m[k] = (m[k] || 0) + Number(x.valor_centavos); }
+  return Object.entries(m).sort((a, b) => b[1] - a[1]);
+};
+
 async function carregarCompras() {
   const alvo = $('#compras-corpo');
   if (!alvo) return;
-  const { de, ate } = estadoCompras;
+  const { de, ate, categoria } = estadoCompras;
   if (!de || !ate || de > ate) { alvo.innerHTML = '<div class="vazio">Escolha um período válido.</div>'; return; }
   alvo.innerHTML = '<div class="vazio">Carregando…</div>';
   let lista;
   try {
-    lista = await buscarTudo(() => sb.from('compras').select('*, clientes(nome)')
-      .gte('data', de).lte('data', ate)
-      .order('data', { ascending: false }).order('numero', { ascending: false }));
+    lista = await buscarTudo(() => {
+      let q = sb.from('compras').select('*, clientes(nome), categorias(nome)')
+        .gte('data', de).lte('data', ate);
+      if (categoria) q = q.eq('categoria_id', categoria);
+      return q.order('data', { ascending: false }).order('numero', { ascending: false });
+    });
   } catch (err) { alvo.innerHTML = `<div class="vazio">${esc(msgErro(err))}</div>`; return; }
 
   const ativas = lista.filter((c) => c.status === 'ativa');
   const total = ativas.reduce((s, c) => s + Number(c.valor_centavos), 0);
-  const porForma = {};
-  for (const c of ativas) porForma[c.forma_pagamento] = (porForma[c.forma_pagamento] || 0) + Number(c.valor_centavos);
   const mostrar = estadoCompras.canceladas ? lista : ativas;
 
   alvo.innerHTML = `
     <div class="kpis">
       <div class="card kpi"><div class="rot">Total vendido</div><div class="val">${fmtMoeda(total)}</div></div>
-      <div class="card kpi"><div class="rot">Compras</div><div class="val">${ativas.length}</div></div>
+      <div class="card kpi"><div class="rot">Vendas</div><div class="val">${ativas.length}</div></div>
       <div class="card kpi"><div class="rot">Ticket médio</div><div class="val">${fmtMoeda(ativas.length ? Math.round(total / ativas.length) : 0)}</div></div>
-      <div class="card kpi"><div class="rot">Por pagamento</div>
-        <div class="pequeno" style="margin-top:4px">${Object.entries(porForma).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${FORMAS[k]}: <b>${fmtMoeda(v)}</b>`).join('<br>') || '—'}</div></div>
+    </div>
+    <div class="grade-2">
+      <div class="card"><div class="secao-topo"><h3>Por categoria</h3></div>${listaBarras(somarPor(ativas, (c) => c.categorias?.nome ?? 'Sem categoria'), 'var(--serie-entrada)')}</div>
+      <div class="card"><div class="secao-topo"><h3>Por forma de pagamento</h3></div>${listaBarras(somarPor(ativas, (c) => FORMAS[c.forma_pagamento]), 'var(--serie-entrada)')}</div>
     </div>
     <div class="card">
       ${mostrar.length ? `
       <div class="tabela-wrap"><table class="tabela">
-        <thead><tr><th>Data</th><th>Cliente</th><th>Descrição</th><th class="esconder-cel">Pagamento</th><th class="num">Valor</th></tr></thead>
+        <thead><tr><th>Data</th><th>Cliente</th><th>Descrição</th><th class="esconder-cel">Pagamento</th><th class="num">Valor</th><th></th></tr></thead>
         <tbody>${mostrar.map((c) => `
           <tr class="${c.status === 'cancelada' ? 'cancelada' : ''}">
             <td>${fmtData(c.data)}<div class="muted pequeno">nº ${c.numero}</div></td>
-            <td><a href="#/cliente/${c.cliente_id}">${esc(c.clientes?.nome ?? '—')}</a></td>
-            <td><span class="desc">${esc(c.descricao)}</span>${c.status === 'cancelada' ? ` <span class="tag cancelada">cancelada</span>` : ''}</td>
+            <td>${c.cliente_id ? `<a href="#/cliente/${c.cliente_id}">${esc(c.clientes?.nome ?? '—')}</a>` : '<span class="muted">Venda balcão</span>'}</td>
+            <td><span class="desc">${esc(c.descricao)}</span> ${tagCategoria(c.categorias?.nome)}${c.status === 'cancelada' ? ` <span class="tag cancelada">cancelada</span>` : ''}</td>
             <td class="esconder-cel"><span class="tag">${FORMAS[c.forma_pagamento]}${c.forma_pagamento === 'credito' && c.parcelas > 1 ? ` ${c.parcelas}x` : ''}</span></td>
             <td class="num">${fmtMoeda(c.valor_centavos)}</td>
+            <td class="num">${c.status === 'cancelada' ? '' : `<div class="acoes-linha">
+              <button class="link-btn" type="button" data-editar-venda="${c.id}">Editar</button>
+              <button class="link-btn perigo" type="button" data-cancelar-venda="${c.id}">Cancelar</button></div>`}</td>
           </tr>`).join('')}
         </tbody>
-      </table></div>` : '<div class="vazio"><b>Nenhuma compra nesse período</b></div>'}
+      </table></div>` : '<div class="vazio"><b>Nenhuma venda nesse período</b></div>'}
     </div>`;
+
+  const acha = (id) => lista.find((c) => c.id === id);
+  $$('[data-editar-venda]', alvo).forEach((b) => b.addEventListener('click', () => {
+    const c = acha(b.dataset.editarVenda);
+    abrirCompra(c.cliente_id ? { id: c.cliente_id, nome: c.clientes?.nome } : null, c);
+  }));
+  $$('[data-cancelar-venda]', alvo).forEach((b) => b.addEventListener('click', () => abrirCancelarCompra(acha(b.dataset.cancelarVenda))));
+}
+
+// ===================================================================
+// Tela: CAIXA — entradas, saídas, saldo e faturamento mensal
+// ===================================================================
+const estadoCaixa = { mes: null, cancelados: false };
+const MESES_CURTOS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const nomeMes = (ym) => `${MESES[Number(ym.slice(5, 7)) - 1]} de ${ym.slice(0, 4)}`;
+
+async function telaCaixa() {
+  if (!estadoCaixa.mes) estadoCaixa.mes = hojeSP().slice(0, 7);
+  conteudo.innerHTML = `
+    <div class="barra">
+      <h1>Caixa</h1>
+      <div class="acoes">
+        <button class="btn btn-ghost btn-sm" id="btn-exportar-caixa" type="button">Exportar mês</button>
+        <button class="btn btn-ghost btn-sm" id="btn-entrada" type="button">+ Entrada</button>
+        <button class="btn btn-ghost btn-sm" id="btn-saida" type="button">− Saída</button>
+        <button class="btn btn-primary btn-sm" id="btn-venda-caixa" type="button">+ Venda balcão</button>
+      </div>
+    </div>
+    <div class="barra">
+      <div class="periodo">
+        <label>Mês<input type="month" id="caixa-mes" value="${estadoCaixa.mes}" max="${hojeSP().slice(0, 7)}"></label>
+      </div>
+      <label class="check"><input type="checkbox" id="chk-cancelados" ${estadoCaixa.cancelados ? 'checked' : ''}> Mostrar cancelados</label>
+    </div>
+    <div id="caixa-corpo"><div class="vazio">Carregando…</div></div>`;
+
+  $('#caixa-mes').addEventListener('change', (e) => { if (e.target.value) { estadoCaixa.mes = e.target.value; carregarCaixa(); } });
+  $('#chk-cancelados').addEventListener('change', (e) => { estadoCaixa.cancelados = e.target.checked; carregarCaixa(); });
+  $('#btn-entrada').addEventListener('click', () => abrirLancamento('entrada'));
+  $('#btn-saida').addEventListener('click', () => abrirLancamento('saida'));
+  $('#btn-venda-caixa').addEventListener('click', () => abrirCompra(null, null));
+  $('#btn-exportar-caixa').addEventListener('click', exportarCaixa);
+  carregarCaixa();
+}
+
+async function movimentosEntre(de, ate) {
+  return buscarTudo(() => sb.from('caixa_movimentos').select('*')
+    .gte('data', de).lte('data', ate)
+    .order('data', { ascending: false }).order('criado_em', { ascending: false }));
+}
+
+async function carregarCaixa() {
+  const alvo = $('#caixa-corpo');
+  if (!alvo) return;
+  const ym = estadoCaixa.mes;
+  const ini = `${ym}-01`;
+  const fim = ultimoDiaMes(ini);
+  const ini12 = addMeses(ini, -11);
+  alvo.innerHTML = '<div class="vazio">Carregando…</div>';
+  let todos;
+  try { todos = await movimentosEntre(ini12, fim); } catch (err) { alvo.innerHTML = `<div class="vazio">${esc(msgErro(err))}</div>`; return; }
+  if (estadoCaixa.mes !== ym || !$('#caixa-corpo')) return;
+
+  const doMes = todos.filter((m) => m.data >= ini);
+  const ativos = doMes.filter((m) => m.ativo);
+  const soma = (f) => ativos.filter(f).reduce((s, m) => s + Number(m.valor_centavos), 0);
+  const vendas = soma((m) => m.origem === 'venda');
+  const outrasEntradas = soma((m) => m.origem === 'lancamento' && m.tipo === 'entrada');
+  const saidas = soma((m) => m.tipo === 'saida');
+  const saldo = vendas + outrasEntradas - saidas;
+
+  // últimos 12 meses
+  const meses = Array.from({ length: 12 }, (_, i) => addMeses(ini12, i).slice(0, 7));
+  const porMes = Object.fromEntries(meses.map((m) => [m, { entrada: 0, saida: 0 }]));
+  for (const m of todos) if (m.ativo && porMes[m.data.slice(0, 7)]) porMes[m.data.slice(0, 7)][m.tipo] += Number(m.valor_centavos);
+  const maxMes = Math.max(1, ...meses.map((m) => Math.max(porMes[m].entrada, porMes[m].saida)));
+
+  // saldo por forma de pagamento (ajuda a conferir o dinheiro na gaveta)
+  const formas = {};
+  for (const m of ativos) formas[m.forma_pagamento] = (formas[m.forma_pagamento] || 0) + (m.tipo === 'entrada' ? 1 : -1) * Number(m.valor_centavos);
+
+  const mostrar = estadoCaixa.cancelados ? doMes : ativos;
+
+  alvo.innerHTML = `
+    <div class="kpis">
+      <div class="card kpi"><div class="rot">Faturamento (vendas)</div><div class="val">${fmtMoeda(vendas)}</div></div>
+      <div class="card kpi"><div class="rot">Outras entradas</div><div class="val">${fmtMoeda(outrasEntradas)}</div></div>
+      <div class="card kpi"><div class="rot">Saídas</div><div class="val neg">− ${fmtMoeda(saidas)}</div></div>
+      <div class="card kpi"><div class="rot">Saldo do mês</div><div class="val ${saldo >= 0 ? 'pos' : 'neg'}">${saldo < 0 ? '− ' : ''}${fmtMoeda(Math.abs(saldo))}</div></div>
+    </div>
+
+    <div class="card grafico" style="margin-bottom:18px">
+      <div class="secao-topo" style="padding:0 0 10px;border:0"><h3>Entradas e saídas · últimos 12 meses</h3></div>
+      <div class="grafico-legenda" aria-hidden="true">
+        <span><i style="background:var(--serie-entrada)"></i>Entradas</span>
+        <span><i style="background:var(--serie-saida)"></i>Saídas</span>
+      </div>
+      <div class="grafico-area" role="img" aria-label="Gráfico de entradas e saídas por mês">
+        ${meses.map((m) => `
+          <div class="grafico-mes ${m === ym ? 'ativo' : ''}" data-mes="${m}">
+            <div class="b" style="height:${(porMes[m].entrada / maxMes) * 100}%;background:var(--serie-entrada)"></div>
+            <div class="b" style="height:${(porMes[m].saida / maxMes) * 100}%;background:var(--serie-saida)"></div>
+          </div>`).join('')}
+      </div>
+      <div class="grafico-rotulos">${meses.map((m) => `<span>${MESES_CURTOS[Number(m.slice(5, 7)) - 1]}</span>`).join('')}</div>
+      <table class="sr-only"><caption>Entradas e saídas por mês</caption>
+        <tr><th>Mês</th><th>Entradas</th><th>Saídas</th></tr>
+        ${meses.map((m) => `<tr><td>${nomeMes(m)}</td><td>${fmtMoeda(porMes[m].entrada)}</td><td>${fmtMoeda(porMes[m].saida)}</td></tr>`).join('')}
+      </table>
+    </div>
+
+    <div class="grade-2">
+      <div class="card"><div class="secao-topo"><h3>Entradas por categoria</h3></div>
+        ${listaBarras(somarPor(ativos.filter((m) => m.tipo === 'entrada'), (m) => m.categoria ?? 'Sem categoria'), 'var(--serie-entrada)')}</div>
+      <div class="card"><div class="secao-topo"><h3>Saídas por categoria</h3></div>
+        ${listaBarras(somarPor(ativos.filter((m) => m.tipo === 'saida'), (m) => m.categoria), 'var(--serie-saida)')}</div>
+      <div class="card"><div class="secao-topo"><h3>Saldo por forma de pagamento</h3></div>
+        <div class="lista-barras">${Object.keys(formas).length ? Object.entries(formas).sort((a, b) => b[1] - a[1]).map(([k, v]) => `
+          <div class="item"><span>${FORMAS[k]}</span><span class="valor ${v >= 0 ? 'pos' : 'neg'}" style="color:var(${v >= 0 ? '--texto-entrada' : '--texto-saida'})">${v < 0 ? '− ' : ''}${fmtMoeda(Math.abs(v))}</span></div>`).join('') : '<p class="muted pequeno">Nada no mês.</p>'}</div></div>
+    </div>
+
+    <div class="card">
+      <div class="secao-topo"><h3>Movimentos de ${nomeMes(ym)}</h3></div>
+      ${mostrar.length ? `
+      <div class="tabela-wrap"><table class="tabela">
+        <thead><tr><th>Data</th><th class="esconder-cel">Tipo</th><th>Descrição</th><th class="esconder-cel">Pagamento</th><th class="num">Valor</th><th></th></tr></thead>
+        <tbody>${mostrar.map((m) => {
+          const ent = m.tipo === 'entrada';
+          const rotulo = m.origem === 'venda' ? 'Venda' : ent ? 'Entrada' : 'Saída';
+          return `
+          <tr class="${m.ativo ? '' : 'cancelada'}">
+            <td>${fmtData(m.data)}</td>
+            <td class="esconder-cel"><span class="tag ${ent ? 'entrada' : 'saida'}">${rotulo}</span></td>
+            <td><span class="desc">${esc(m.descricao)}</span> ${tagCategoria(m.categoria)}
+              ${m.origem === 'venda' ? `<div class="muted pequeno">${m.cliente_id ? `<a href="#/cliente/${m.cliente_id}">${esc(m.cliente_nome)}</a>` : 'Venda balcão'} · nº ${m.numero}</div>` : ''}
+              ${m.ativo ? '' : `<div class="pequeno"><span class="tag cancelada">cancelado</span> ${esc(m.motivo_cancelamento)}</div>`}</td>
+            <td class="esconder-cel"><span class="tag">${FORMAS[m.forma_pagamento]}${m.parcelas > 1 ? ` ${m.parcelas}x` : ''}</span></td>
+            <td class="num ${ent ? 'pos' : 'neg'}">${ent ? '+' : '−'} ${fmtMoeda(m.valor_centavos)}</td>
+            <td class="num">${m.ativo ? `<div class="acoes-linha">
+              <button class="link-btn" type="button" data-editar-mov="${m.id}">Editar</button>
+              <button class="link-btn perigo" type="button" data-cancelar-mov="${m.id}">Cancelar</button></div>` : ''}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>` : `<div class="vazio"><b>Nenhum movimento em ${nomeMes(ym)}</b>As vendas entram aqui sozinhas. Use “− Saída” para registrar despesas.</div>`}
+    </div>`;
+
+  // dica do gráfico
+  const dica = $('#dica-grafico');
+  $$('.grafico-mes', alvo).forEach((el) => {
+    el.addEventListener('mousemove', (e) => {
+      const m = el.dataset.mes; const v = porMes[m]; const s = v.entrada - v.saida;
+      dica.innerHTML = `<b>${nomeMes(m)}</b>
+        <div class="linha-d"><span>Entradas</span><span>${fmtMoeda(v.entrada)}</span></div>
+        <div class="linha-d"><span>Saídas</span><span>${fmtMoeda(v.saida)}</span></div>
+        <div class="linha-d"><span>Saldo</span><b style="margin:0;color:var(${s >= 0 ? '--texto-entrada' : '--texto-saida'})">${s < 0 ? '− ' : ''}${fmtMoeda(Math.abs(s))}</b></div>`;
+      dica.hidden = false;
+      const x = Math.min(e.clientX + 14, window.innerWidth - dica.offsetWidth - 8);
+      dica.style.left = `${x}px`; dica.style.top = `${e.clientY + 14}px`;
+    });
+    el.addEventListener('mouseleave', () => { dica.hidden = true; });
+    el.addEventListener('click', () => { dica.hidden = true; estadoCaixa.mes = el.dataset.mes; $('#caixa-mes').value = el.dataset.mes; carregarCaixa(); });
+  });
+
+  // ações
+  const acha = (id) => doMes.find((m) => m.id === id);
+  $$('[data-editar-mov]', alvo).forEach((b) => b.addEventListener('click', async () => {
+    const m = acha(b.dataset.editarMov);
+    const tabela = m.origem === 'venda' ? 'compras' : 'lancamentos';
+    const { data, error } = await sb.from(tabela).select('*').eq('id', m.id).single();
+    if (error) return toast(msgErro(error), 'erro');
+    if (tabela === 'compras') abrirCompra(data.cliente_id ? { id: data.cliente_id, nome: m.cliente_nome } : null, data);
+    else abrirLancamento(data.tipo, data);
+  }));
+  $$('[data-cancelar-mov]', alvo).forEach((b) => b.addEventListener('click', () => {
+    const m = acha(b.dataset.cancelarMov);
+    abrirCancelar(m.origem === 'venda' ? 'compras' : 'lancamentos', m);
+  }));
+}
+
+async function exportarCaixa() {
+  const ym = estadoCaixa.mes;
+  try {
+    const lista = (await movimentosEntre(`${ym}-01`, ultimoDiaMes(`${ym}-01`))).reverse();
+    const csvCel = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const cab = ['Data', 'Tipo', 'Categoria', 'Descrição', 'Cliente', 'Pagamento', 'Parcelas', 'Valor', 'Situação'];
+    const linhas = lista.map((m) => [
+      fmtData(m.data), m.origem === 'venda' ? 'Venda' : m.tipo === 'entrada' ? 'Entrada' : 'Saída', m.categoria, m.descricao,
+      m.origem === 'venda' ? (m.cliente_nome ?? 'Venda balcão') : '', FORMAS[m.forma_pagamento], m.parcelas,
+      ((m.tipo === 'saida' ? -1 : 1) * Number(m.valor_centavos) / 100).toFixed(2).replace('.', ','),
+      m.ativo ? 'Ativo' : `Cancelado: ${m.motivo_cancelamento ?? ''}`,
+    ].map(csvCel).join(';'));
+    const csv = '﻿' + [cab.map(csvCel).join(';'), ...linhas].join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `caixa-msc-${ym}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast(`${lista.length} movimentos exportados`);
+  } catch (err) { toast(msgErro(err), 'erro'); }
+}
+
+// ===================================================================
+// Tela: CONFIGURAÇÕES — categorias
+// ===================================================================
+const GRUPOS_CAT = [
+  ['venda', 'Categorias de produto', 'Usadas nas vendas. Ex.: Celulares, Capas…'],
+  ['despesa', 'Tipos de saída (despesas)', 'Usados nas saídas do caixa. Ex.: Aluguel, Fornecedor…'],
+  ['receita', 'Tipos de entrada (que não são venda)', 'Ex.: dinheiro colocado pelo dono.'],
+];
+
+async function telaConfig() {
+  conteudo.innerHTML = '<div class="vazio">Carregando…</div>';
+  let lista;
+  try { lista = await categorias(true); } catch (err) { conteudo.innerHTML = `<div class="vazio">${esc(msgErro(err))}</div>`; return; }
+  conteudo.innerHTML = `
+    <div class="barra"><h1>Configurações</h1></div>
+    <p class="muted" style="margin-bottom:16px">Para renomear, edite o nome e clique fora do campo. Categorias desativadas somem das listas, mas o histórico continua.</p>
+    <div class="grade-2">
+      ${GRUPOS_CAT.map(([tipo, titulo, dica]) => `
+        <div class="card">
+          <div class="secao-topo"><div><h3>${titulo}</h3><p class="muted pequeno">${dica}</p></div></div>
+          <div class="cfg-lista">
+            ${lista.filter((c) => c.tipo === tipo).map((c) => `
+              <div class="cfg-item ${c.ativo ? '' : 'inativa'}">
+                <input value="${esc(c.nome)}" data-renomear="${c.id}" aria-label="Nome da categoria">
+                <button class="btn btn-ghost btn-sm" type="button" data-alternar="${c.id}">${c.ativo ? 'Desativar' : 'Ativar'}</button>
+              </div>`).join('')}
+          </div>
+          <form class="cfg-novo" data-novo="${tipo}">
+            <input name="nome" placeholder="Nova categoria…" aria-label="Nova categoria">
+            <button class="btn btn-primary btn-sm" type="submit">Adicionar</button>
+          </form>
+        </div>`).join('')}
+    </div>`;
+
+  $$('[data-renomear]').forEach((inp) => inp.addEventListener('change', async () => {
+    const nome = inp.value.trim().replace(/\s+/g, ' ');
+    const atual = lista.find((c) => c.id === inp.dataset.renomear);
+    if (nome.length < 2) { inp.value = atual.nome; return toast('O nome precisa ter pelo menos 2 letras.', 'erro'); }
+    const { error } = await sb.from('categorias').update({ nome }).eq('id', atual.id);
+    if (error) { inp.value = atual.nome; return toast(msgErro(error), 'erro'); }
+    atual.nome = nome; CATS = null;
+    toast('Categoria renomeada');
+  }));
+  $$('[data-alternar]').forEach((b) => b.addEventListener('click', async () => {
+    const c = lista.find((x) => x.id === b.dataset.alternar);
+    const { error } = await sb.from('categorias').update({ ativo: !c.ativo }).eq('id', c.id);
+    if (error) return toast(msgErro(error), 'erro');
+    CATS = null;
+    toast(c.ativo ? 'Categoria desativada' : 'Categoria ativada');
+    telaConfig();
+  }));
+  $$('[data-novo]').forEach((f) => f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nome = f.nome.value.trim().replace(/\s+/g, ' ');
+    if (nome.length < 2) return toast('Escreva o nome da categoria.', 'erro');
+    const tipo = f.dataset.novo;
+    const ordem = Math.max(0, ...lista.filter((c) => c.tipo === tipo && c.ordem < 99).map((c) => c.ordem)) + 1;
+    const { error } = await sb.from('categorias').insert({ tipo, nome, ordem });
+    if (error) return toast(msgErro(error), 'erro');
+    CATS = null;
+    toast(`“${nome}” adicionada`);
+    telaConfig();
+  }));
 }
 
 // ===================================================================
