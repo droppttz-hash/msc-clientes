@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>MSC Clientes</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231d4ed8'/><text x='16' y='21' font-family='Arial' font-weight='700' font-size='12' fill='white' text-anchor='middle'>MSC</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- LOGIN -->
+  <section id="tela-login" class="login" hidden>
+    <form id="form-login" class="login-card" autocomplete="on">
+      <div class="logo-lg">MSC</div>
+      <h1>MSC Clientes</h1>
+      <p class="muted">Cadastro de clientes e compras</p>
+      <label>E-mail
+        <input type="email" name="email" required autocomplete="username">
+      </label>
+      <label>Senha
+        <input type="password" name="senha" required autocomplete="current-password">
+      </label>
+      <p class="erro" id="login-erro" hidden></p>
+      <button class="btn btn-primary btn-block" type="submit">Entrar</button>
+    </form>
+  </section>
+
+  <!-- AVISO DE CONFIGURAÇÃO -->
+  <section id="tela-config" class="login" hidden>
+    <div class="login-card">
+      <div class="logo-lg">MSC</div>
+      <h1>Falta configurar</h1>
+      <p class="muted">Abra o arquivo <code>config.js</code> e cole a <b>URL</b> e a <b>chave anon</b> do seu projeto Supabase. O passo a passo está no arquivo <code>COMO-HOSPEDAR.md</code>.</p>
+    </div>
+  </section>
+
+  <!-- APP -->
+  <div id="app" hidden>
+    <header class="topo">
+      <div class="marca"><span class="logo">MSC</span><span>Clientes</span></div>
+      <nav class="abas">
+        <a href="#/clientes" data-aba="clientes">Clientes</a>
+        <a href="#/compras" data-aba="compras">Compras</a>
+        <a href="#/aniversariantes" data-aba="aniversariantes">Aniversariantes</a>
+      </nav>
+      <button class="btn btn-ghost btn-sm" id="btn-sair" type="button">Sair</button>
+    </header>
+    <main id="conteudo" class="conteudo"></main>
+  </div>
+
+  <!-- MODAL CLIENTE -->
+  <dialog id="dlg-cliente" class="modal">
+    <form id="form-cliente" method="dialog" novalidate>
+      <header class="modal-topo">
+        <h2 id="dlg-cliente-titulo">Novo cliente</h2>
+        <button type="button" class="x" data-fechar aria-label="Fechar">×</button>
+      </header>
+      <div class="grade">
+        <label class="col-2">Nome completo *
+          <input name="nome" required minlength="2" autocomplete="off">
+        </label>
+        <label>Telefone / WhatsApp
+          <input name="telefone" inputmode="tel" placeholder="(21) 99999-9999" data-mascara="telefone">
+        </label>
+        <label>E-mail
+          <input name="email" type="email" placeholder="cliente@email.com">
+        </label>
+        <label>Data de nascimento
+          <input name="data_nascimento" type="date">
+        </label>
+        <label>CEP <span class="dica" id="cep-status"></span>
+          <input name="cep" inputmode="numeric" placeholder="00000-000" data-mascara="cep">
+        </label>
+        <label class="col-2">Rua
+          <input name="logradouro">
+        </label>
+        <label>Número
+          <input name="numero">
+        </label>
+        <label>Complemento
+          <input name="complemento">
+        </label>
+        <label>Bairro
+          <input name="bairro">
+        </label>
+        <label>Cidade / UF
+          <div class="linha">
+            <input name="cidade" class="flex">
+            <input name="uf" maxlength="2" class="uf" placeholder="UF">
+          </div>
+        </label>
+        <label class="col-2">Observações
+          <textarea name="observacoes" rows="2"></textarea>
+        </label>
+      </div>
+      <p class="erro" id="cliente-erro" hidden></p>
+      <footer class="modal-rodape">
+        <button type="button" class="btn btn-ghost" data-fechar>Cancelar</button>
+        <button type="submit" class="btn btn-primary" value="salvar">Salvar cliente</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- MODAL COMPRA -->
+  <dialog id="dlg-compra" class="modal">
+    <form id="form-compra" method="dialog" novalidate>
+      <header class="modal-topo">
+        <h2 id="dlg-compra-titulo">Nova compra</h2>
+        <button type="button" class="x" data-fechar aria-label="Fechar">×</button>
+      </header>
+      <p class="muted" id="dlg-compra-cliente"></p>
+      <div class="grade">
+        <label class="col-2">O que comprou / serviço feito *
+          <input name="descricao" required placeholder="Ex.: iPhone 13 128GB seminovo + película">
+        </label>
+        <label>Valor *
+          <input name="valor" inputmode="numeric" placeholder="R$ 0,00" data-mascara="dinheiro" required>
+        </label>
+        <label>Data *
+          <input name="data" type="date" required>
+        </label>
+        <label>Forma de pagamento *
+          <select name="forma_pagamento" required>
+            <option value="pix">PIX</option>
+            <option value="dinheiro">Dinheiro</option>
+            <option value="debito">Cartão de débito</option>
+            <option value="credito">Cartão de crédito</option>
+            <option value="boleto">Boleto</option>
+            <option value="outro">Outro</option>
+          </select>
+        </label>
+        <label id="campo-parcelas" hidden>Parcelas
+          <select name="parcelas"></select>
+        </label>
+        <label class="col-2">Observação
+          <textarea name="observacao" rows="2" placeholder="Ex.: garantia de 1 ano, IMEI, nº de série…"></textarea>
+        </label>
+      </div>
+      <p class="erro" id="compra-erro" hidden></p>
+      <footer class="modal-rodape">
+        <button type="button" class="btn btn-ghost" data-fechar>Cancelar</button>
+        <button type="submit" class="btn btn-primary" value="salvar">Salvar compra</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <!-- MODAL CANCELAR COMPRA -->
+  <dialog id="dlg-cancelar" class="modal modal-sm">
+    <form id="form-cancelar" method="dialog" novalidate>
+      <header class="modal-topo">
+        <h2>Cancelar compra</h2>
+        <button type="button" class="x" data-fechar aria-label="Fechar">×</button>
+      </header>
+      <p class="muted" id="dlg-cancelar-info"></p>
+      <label>Motivo do cancelamento *
+        <input name="motivo" required placeholder="Ex.: devolução, lançado errado…">
+      </label>
+      <p class="muted pequeno">A compra continua no histórico, marcada como cancelada, e sai dos totais.</p>
+      <p class="erro" id="cancelar-erro" hidden></p>
+      <footer class="modal-rodape">
+        <button type="button" class="btn btn-ghost" data-fechar>Voltar</button>
+        <button type="submit" class="btn btn-danger" value="cancelar">Cancelar compra</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
