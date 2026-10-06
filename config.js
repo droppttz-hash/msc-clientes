@@ -7,5 +7,5 @@
 // os dados para quem fizer login (regras de segurança no schema.sql).
 // NUNCA cole aqui a chave "service_role".
 // =====================================================================
-export const SUPABASE_URL = 'COLE_AQUI_A_PROJECT_URL';
-export const SUPABASE_ANON_KEY = 'COLE_AQUI_A_ANON_KEY';
+export const SUPABASE_URL = 'https://wadnxsbdxkqkuaqotrbf.supabase.co';
+export const SUPABASE_ANON_KEY = 'sb_publishable_PDQo88Ctotf15zl5pHXSmA_Z27NAyeT';
