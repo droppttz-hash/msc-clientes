@@ -2,7 +2,7 @@
 import { estado, pode, esc, rpc, fmtMoeda, fmtPct, fmtNum, kpi, vazio, icone, hojeSP, nomeMes, fmtTelefone, linkZap, $, $$ } from '../core.js';
 
 export async function tela(el, ctx) {
-  const p = await rpc('painel');
+  const [p, ap] = await Promise.all([rpc('painel'), pode('estoque.ver') ? rpc('aparelhos_resumo').catch(() => null) : null]);
   if (!ctx.ativo()) return;
   estado.painel = p;
   const hora = Number(new Intl.DateTimeFormat('pt-BR', { hour: 'numeric', hour12: false, timeZone: 'America/Sao_Paulo' }).format(new Date()));
@@ -20,6 +20,8 @@ export async function tela(el, ctx) {
   // alertas
   const alertas = [];
   if (p.aguardando_aprovacao) alertas.push(`<a class="alerta" href="#/vendas/aprovacoes">${icone('alerta')}<span><b>${p.aguardando_aprovacao} venda(s) aguardando sua aprovação</b> — desconto acima do limite.</span></a>`);
+  if (ap?.parados) alertas.push(`<a class="alerta" href="#/aparelhos">${icone('alerta')}<span><b>${ap.parados} aparelho(s) parado(s) há mais de ${ap.dias_alerta} dias</b> — vale revisar o preço.</span></a>`);
+  if (ap?.em_teste) alertas.push(`<a class="alerta" href="#/aparelhos">${icone('alerta')}<span><b>${ap.em_teste} aparelho(s) em teste</b> esperando liberação.</span></a>`);
   if (p.pagar?.vencido) alertas.push(`<a class="alerta" href="#/financas/pagar">${icone('alerta')}<span><b>Contas a pagar vencidas: ${fmtMoeda(p.pagar.vencido)}</b></span></a>`);
 
   // números

@@ -65,6 +65,8 @@ async function empresa(el, ctx) {
           <label>Desconto máximo sem aprovação (%)<input name="desconto_max_pct" inputmode="decimal" value="${String(e.desconto_max_pct).replace('.', ',')}"></label>
           <label>Garantia padrão (dias)<input name="garantia_padrao_dias" type="number" min="0" max="3650" value="${e.garantia_padrao_dias}"></label>
           <label>Alerta de cliente sem comprar (dias)<input name="dias_alerta_sem_compra" type="number" min="1" value="${e.dias_alerta_sem_compra}"></label>
+          <label>Alerta de aparelho parado (dias)<input name="dias_alerta_aparelho_parado" type="number" min="1" max="3650" value="${e.dias_alerta_aparelho_parado ?? 60}"></label>
+          <label class="col-2">Checklist de teste dos aparelhos <span class="dica-campo muted">(um item por linha)</span><textarea name="checklist_aparelho" rows="5">${esc((e.checklist_aparelho || []).join('\n'))}</textarea></label>
           <label>Sair sozinho após (minutos parado)<input name="sessao_inatividade_min" type="number" min="0" max="1440" value="${e.sessao_inatividade_min ?? 60}"></label>
           <p class="muted pequeno col-2" style="margin-top:-6px">Encerra a sessão do computador que ficar sem uso. Use 0 para nunca sair sozinho.</p>
           <label class="check col-2"><input type="checkbox" name="permitir_estoque_negativo" ${e.permitir_estoque_negativo ? 'checked' : ''}> Permitir vender sem estoque (estoque fica negativo)</label>
@@ -124,6 +126,8 @@ async function empresa(el, ctx) {
       cep: soDigitos(f.cep.value) || null, logradouro: v('logradouro'), numero: v('numero'), complemento: v('complemento'), bairro: v('bairro'), cidade: v('cidade'),
       uf: (v('uf') || '').toUpperCase() || null, logo, cor_primaria: f.cor_primaria.value, cor_sidebar: f.cor_sidebar.value, modo_tema: f.modo_tema.value,
       desconto_max_pct: desc, garantia_padrao_dias: Number(f.garantia_padrao_dias.value) || 0, dias_alerta_sem_compra: Number(f.dias_alerta_sem_compra.value) || 90,
+      dias_alerta_aparelho_parado: Math.max(1, Number(f.dias_alerta_aparelho_parado.value) || 60),
+      checklist_aparelho: [...new Set(f.checklist_aparelho.value.split('\n').map((x) => x.trim()).filter(Boolean))],
       sessao_inatividade_min: Math.min(1440, Math.max(0, Number(f.sessao_inatividade_min.value) || 0)), ibge,
       permitir_estoque_negativo: f.permitir_estoque_negativo.checked, texto_recibo: v('texto_recibo'), texto_garantia: v('texto_garantia'),
     };

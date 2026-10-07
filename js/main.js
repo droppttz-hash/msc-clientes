@@ -20,6 +20,10 @@ const MENU = [
     { rotulo: 'Clientes', href: '#/clientes' },
     { rotulo: 'Aniversariantes', href: '#/clientes/aniversariantes' },
   ] },
+  { id: 'aparelhos', rotulo: 'Aparelhos', icone: 'aparelho', perm: ['estoque.ver'], filhos: [
+    { rotulo: 'Em estoque', href: '#/aparelhos' },
+    { rotulo: 'Vendidos e lucro', href: '#/aparelhos/vendidos', perm: ['vendas.ver_lucro'] },
+  ] },
   { id: 'estoque', rotulo: 'Estoque', icone: 'estoque', perm: ['estoque.ver'], filhos: [
     { rotulo: 'Produtos', href: '#/estoque' },
     { rotulo: 'Entradas de mercadoria', href: '#/estoque/entradas', perm: ['estoque.entrada'] },
@@ -58,6 +62,9 @@ const ROTAS = [
   [/^#\/vendas$/, 'vendas', 'lista'],
   [/^#\/vendas\/aprovacoes$/, 'vendas', 'aprovacoes'],
   [/^#\/vendas\/([0-9a-f-]{36})$/, 'vendas', 'detalhe'],
+  [/^#\/aparelhos$/, 'aparelhos', 'lista'],
+  [/^#\/aparelhos\/vendidos$/, 'aparelhos', 'vendidos'],
+  [/^#\/aparelhos\/([0-9a-f-]{36})$/, 'aparelhos', 'ficha'],
   [/^#\/estoque$/, 'estoque', 'produtos'],
   [/^#\/estoque\/produto\/([0-9a-f-]{36})$/, 'estoque', 'produto'],
   [/^#\/estoque\/entradas$/, 'estoque', 'entradas'],
@@ -82,6 +89,7 @@ const MODULOS = {
   clientes: () => import('./telas/clientes.js'),
   vendas: () => import('./telas/vendas.js'),
   estoque: () => import('./telas/estoque.js'),
+  aparelhos: () => import('./telas/aparelhos.js'),
   financas: () => import('./telas/financas.js'),
   config: () => import('./telas/config.js'),
 };
@@ -284,8 +292,8 @@ $('#busca-input').addEventListener('input', (e) => {
     let r = [];
     try { r = await rpc('busca_geral', { p_termo: termo }); } catch (err) { $('#busca-resultados').innerHTML = `<p class="erro">${esc(msgErro(err))}</p>`; return; }
     if (termo !== $('#busca-input').value) return;
-    const rot = { cliente: 'Cliente', produto: 'Produto', serie: 'IMEI', venda: 'Venda' };
-    const link = (x) => ({ cliente: `#/clientes/${x.id}`, produto: `#/estoque/produto/${x.id}`, serie: `#/estoque/produto/${x.id}`, venda: `#/vendas/${x.id}` }[x.tipo]);
+    const rot = { cliente: 'Cliente', produto: 'Produto', serie: 'IMEI', aparelho: 'Aparelho', venda: 'Venda' };
+    const link = (x) => ({ cliente: `#/clientes/${x.id}`, produto: `#/estoque/produto/${x.id}`, serie: `#/estoque/produto/${x.id}`, aparelho: `#/aparelhos/${x.id}`, venda: `#/vendas/${x.id}` }[x.tipo]);
     selBusca = r.length ? 0 : -1;
     $('#busca-resultados').innerHTML = r.length ? r.map((x, i) => `<a href="${link(x)}" class="${i === 0 ? 'sel' : ''}">${'<span class="tag cinza">' + rot[x.tipo] + '</span>'}<span><b>${esc(x.titulo)}</b><small>${esc(x.sub || '')}</small></span></a>`).join('')
       : (termo.trim().length < 2 ? '' : '<p class="muted aviso" style="padding:10px 12px">Nada encontrado.</p>');

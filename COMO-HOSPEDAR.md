@@ -10,7 +10,7 @@ Roda em **Supabase** (banco e login) e **Vercel** (site). Nos planos grátis, o 
 | `index.html`, `css/`, `js/` | O sistema (telas) |
 | `config.js` | Endereço e chave pública do Supabase |
 | `vercel.json` | Configurações de segurança do site |
-| `supabase/*.sql` | Banco de dados, para rodar **em ordem** (01, 02, … 11) num projeto novo; o 09 só faz algo no banco antigo da MSC |
+| `supabase/*.sql` | Banco de dados, para rodar **em ordem** (01, 02, … 14) num projeto novo; o 09 só faz algo no banco antigo da MSC |
 
 ## Atualizar o site da MSC (GitHub → Vercel)
 
@@ -22,7 +22,7 @@ O banco da MSC já está atualizado (o Claude aplica as mudanças direto no Supa
 
 ## Replicar para outro cliente
 
-1. **Supabase:** crie um projeto novo (região São Paulo). Em **SQL Editor**, rode os arquivos `supabase/01` até o último (`11`), **um por vez e em ordem**. Cada um deve terminar com *Success*.
+1. **Supabase:** crie um projeto novo (região São Paulo). Em **SQL Editor**, rode os arquivos `supabase/01` até o último (`14`), **um por vez e em ordem**. Cada um deve terminar com *Success*.
 2. **Login:** em Authentication → Providers → Email, desligue *Allow new users to sign up*. Depois crie o primeiro usuário em Authentication → Users → *Add user*, marcando *Auto Confirm User*.
 3. **Primeiro gerente:** em SQL Editor, rode o comando abaixo trocando o e-mail:
    `update perfis set cargo = 'gerente' where email = 'email@do.dono';`

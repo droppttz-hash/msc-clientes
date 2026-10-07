@@ -9,7 +9,7 @@ const TIPOS_MOV = {
   saldo_inicial: 'Saldo inicial', entrada_compra: 'Entrada (compra)', venda: 'Venda', cancelamento_venda: 'Venda cancelada', devolucao_cliente: 'Devolução de cliente',
   devolucao_fornecedor: 'Devolução ao fornecedor', ajuste: 'Ajuste', inventario: 'Inventário', perda: 'Perda / defeito', uso_os: 'Usado em OS', estorno_os: 'Estorno de OS',
 };
-const SERIE_ST = { disponivel: ['Disponível', 'ok'], reservado: ['Reservado', 'warn'], vendido: ['Vendido', 'cinza'], em_os: ['Em OS', 'warn'], em_teste: ['Em teste', 'warn'], devolvido_fornecedor: ['Devolvido ao fornecedor', 'cinza'], defeito: ['Defeito', 'danger'], baixado: ['Baixado', 'cinza'] };
+const SERIE_ST = { disponivel: ['Disponível', 'ok'], reservado: ['Reservado', 'warn'], vendido: ['Vendido', 'cinza'], em_os: ['Em OS', 'warn'], em_teste: ['Em teste', 'warn'], em_reparo: ['Em reparo', 'warn'], em_garantia: ['Em garantia', 'warn'], devolvido_fornecedor: ['Devolvido ao fornecedor', 'cinza'], defeito: ['Defeito', 'danger'], baixado: ['Baixado', 'cinza'] };
 
 // =====================================================================
 // PRODUTOS
@@ -151,7 +151,7 @@ export async function produto(el, ctx) {
     </div>
     ${p.controla_serie ? `<div class="card"><div class="card-topo"><h3>Unidades (IMEI / nº de série)</h3><span class="muted pequeno">${series.filter((s) => s.status === 'disponivel').length} disponível(is)${series.some((s) => s.status === 'em_teste') ? ` · <span class="neg">${series.filter((s) => s.status === 'em_teste').length} em teste</span>` : ''}</span></div>
       ${series.length ? `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>IMEI / Série</th><th>Situação</th>${custo ? '<th class="num">Custo</th>' : ''}<th class="esconder-cel">Entrada</th><th></th></tr></thead><tbody>
-      ${series.map((s) => `<tr><td><b>${esc(s.serie)}</b>${s.observacao ? `<div class="muted pequeno">${esc(s.observacao)}</div>` : ''}</td><td>${tag(SERIE_ST[s.status][0], SERIE_ST[s.status][1])}</td>
+      ${series.map((s) => `<tr><td><a href="#/aparelhos/${s.id}"><b>${esc(s.serie)}</b></a>${s.observacao ? `<div class="muted pequeno">${esc(s.observacao)}</div>` : ''}</td><td>${tag(SERIE_ST[s.status][0], SERIE_ST[s.status][1])}</td>
         ${custo ? `<td class="num">${fmtMoeda(s.custo_centavos)}</td>` : ''}<td class="esconder-cel">${fmtData(s.criado_em)}</td>
         <td class="num">${s.status === 'disponivel' && pode('estoque.ajustar') ? `<button class="link-btn perigo" type="button" data-baixa="${s.id}" data-serie="${esc(s.serie)}">Dar baixa</button>` : ''}${s.status === 'em_teste' && pode('estoque.ajustar') ? `<button class="btn btn-ghost btn-sm" type="button" data-teste="${s.id}" data-serie="${esc(s.serie)}">Concluir teste</button>` : ''}</td></tr>`).join('')}
       </tbody></table></div>` : vazio('Nenhuma unidade', 'Dê entrada de mercadoria informando os IMEIs.')}</div>` : ''}

@@ -1,6 +1,6 @@
 // Vendas: PDV (nova venda), lista, aprovações, detalhe, recibo, devolução
 import {
-  estado, pode, $, $$, esc, uid, fmtMoeda, fmtData, fmtDataHora, fmtTelefone, fmtNum, fmtPct, hojeSP, somarDias, addMeses, ultimoDiaMes,
+  estado, pode, $, $$, esc, textoAparelho, uid, fmtMoeda, fmtData, fmtDataHora, fmtTelefone, fmtNum, fmtPct, hojeSP, somarDias, addMeses, ultimoDiaMes,
   linkZap, abrirModal, pedirMotivo, toast, msgErro, rpc, consulta, buscarTudo, lista as listaCache, baixarCsv, csvMoeda, cabecalho, vazio, carregando,
   tag, kpi, icone, valorDinheiro, setDinheiro, FORMAS, CONDICOES, imprimir, diaSP, lerNumero,
 } from '../core.js';
@@ -81,7 +81,7 @@ export async function nova(el, ctx) {
   function desenhar() {
     const corpo = $('#itens', el);
     corpo.innerHTML = carrinho.itens.map((i, k) => `<tr>
-      <td><b>${esc(i.descricao)}</b><div class="muted pequeno">${i.serie ? `IMEI ${esc(i.serie)}` : esc(i.sku || i.categoria || '')}${i.estoque !== undefined && i.controlaEstoque && !i.serie ? ` · estoque ${fmtNum(i.estoque)}` : ''}</div></td>
+      <td><b>${esc(i.descricao)}</b><div class="muted pequeno">${i.serie ? `IMEI ${esc(i.serie)}${i.detalhes ? ' · ' + esc(textoAparelho(i.detalhes)) : ''}` : esc(i.sku || i.categoria || '')}${i.estoque !== undefined && i.controlaEstoque && !i.serie ? ` · estoque ${fmtNum(i.estoque)}` : ''}</div></td>
       <td class="num">${i.serie ? '1' : `<input class="qtd" data-k="${k}" data-campo="qtd" inputmode="decimal" value="${fmtNum(i.qtd)}">`}</td>
       <td class="num"><input data-k="${k}" data-campo="preco" data-mascara="dinheiro" inputmode="numeric" value="${fmtMoeda(i.preco)}">
         ${i.preco < i.precoTabela ? `<div class="muted pequeno">tabela ${fmtMoeda(i.precoTabela)}</div>` : ''}</td>
@@ -154,17 +154,21 @@ export async function nova(el, ctx) {
   async function adicionar(r) {
     sug.hidden = true; busca.value = '';
     if (r.controla_serie && !r.serie_id) {
-      const series = await consulta(estado.sb.from('produto_series').select('id,serie').eq('produto_id', r.produto_id).eq('status', 'disponivel').order('serie'));
+      const series = (await consulta(estado.sb.from('aparelhos').select('id,imei,condicao,grau,bateria_pct,cor,capacidade,preco_venda_centavos,dias_em_estoque')
+        .eq('produto_id', r.produto_id).eq('status', 'disponivel').order('criado_em'))).map((x) => ({ ...x, serie: x.imei }));
       const usados = new Set(carrinho.itens.map((i) => i.serieId));
       const livres = series.filter((s) => !usados.has(s.id));
       if (!livres.length) { toast(`Nenhum IMEI disponível de ${r.nome}.`, 'erro'); return; }
       const s = await abrirModal({
         titulo: `Qual unidade de ${esc(r.nome)}?`, largura: 'sm', botao: null, cancelar: 'Cancelar',
-        corpo: `<p class="muted">Escolha o IMEI / nº de série que está saindo:</p><div class="busca-resultados" style="padding:0">${livres.map((x) => `<a href="#" data-id="${x.id}" data-serie="${esc(x.serie)}"><b>${esc(x.serie)}</b></a>`).join('')}</div>`,
-        aoAbrir: (f) => f.addEventListener('click', (e) => { const a = e.target.closest('a[data-id]'); if (a) { e.preventDefault(); f.fechar({ id: a.dataset.id, serie: a.dataset.serie }); } }),
+        corpo: `<p class="muted">Escolha o IMEI / nº de série que está saindo:</p><div class="busca-resultados" style="padding:0">${livres.map((x) => `<a href="#" data-id="${x.id}" data-serie="${esc(x.serie)}"><span><b>${esc(x.serie)}</b><small>${esc(textoAparelho(x))}${x.dias_em_estoque > 0 ? ` · ${x.dias_em_estoque} dias no estoque` : ''}</small></span><b>${fmtMoeda(x.preco_venda_centavos)}</b></a>`).join('')}</div>`,
+        aoAbrir: (f) => f.addEventListener('click', (e) => { const a = e.target.closest('a[data-id]'); if (a) { e.preventDefault(); f.fechar(livres.find((x) => x.id === a.dataset.id)); } }),
       });
       if (!s) return;
-      r = { ...r, serie_id: s.id, serie: s.serie };
+      r = { ...r, serie_id: s.id, serie: s.serie, preco_venda_centavos: s.preco_venda_centavos, detalhes: s };
+    } else if (r.serie_id) {
+      const [a] = await consulta(estado.sb.from('aparelhos').select('id,condicao,grau,bateria_pct,cor,capacidade,preco_venda_centavos').eq('id', r.serie_id));
+      if (a) r = { ...r, preco_venda_centavos: a.preco_venda_centavos, detalhes: a };
     }
     if (r.serie_id && carrinho.itens.some((i) => i.serieId === r.serie_id)) { toast('Este IMEI já está na venda.', 'erro'); return; }
     const existente = !r.serie_id && carrinho.itens.find((i) => i.produtoId === r.produto_id && !i.serieId);
@@ -173,6 +177,7 @@ export async function nova(el, ctx) {
       produtoId: r.produto_id, serieId: r.serie_id || null, serie: r.serie || null, sku: r.sku, categoria: r.categoria,
       descricao: r.nome + (r.condicao && r.condicao !== 'novo' ? ` (${CONDICOES[r.condicao].toLowerCase()})` : ''),
       qtd: 1, preco: r.preco_venda_centavos, precoTabela: r.preco_venda_centavos, estoque: Number(r.estoque_atual), controlaEstoque: r.controla_estoque,
+      detalhes: r.detalhes || null,
     });
     if (r.controla_estoque && !r.serie_id && Number(r.estoque_atual) <= 0) toast(`Atenção: ${r.nome} está sem estoque no sistema.`, 'erro');
     ajustarPagamentoUnico(); desenhar(); busca.focus();
@@ -226,6 +231,16 @@ export async function nova(el, ctx) {
   });
 
   // ---- cliente ----
+  // aparelho escolhido na ficha (botão "Vender este aparelho")
+  if (estado.preAparelho) {
+    const idAp = estado.preAparelho; estado.preAparelho = null;
+    consulta(estado.sb.from('aparelhos').select('id,produto_id,imei,status').eq('id', idAp)).then(async ([a]) => {
+      if (!a || a.status !== 'disponivel') { toast('Este aparelho não está disponível.', 'erro'); return; }
+      const [r] = (await rpc('buscar_produto', { p_termo: a.imei, p_limite: 5 })).filter((x) => x.serie_id === a.id);
+      if (r) adicionar(r);
+    }).catch((err) => toast(msgErro(err), 'erro'));
+  }
+
   $('#btn-cli', el).addEventListener('click', async () => {
     const { escolherCliente } = await import('./clientes.js');
     const c = await escolherCliente(); if (c) { carrinho.cliente = c; resumo(); }
@@ -323,7 +338,7 @@ async function carregarVenda(id) {
 function textoWhats({ venda, itens, pags }) {
   const loja = estado.empresa?.nome_fantasia || '';
   return [`*${loja}* — Recibo da venda nº ${venda.numero} (${fmtData(venda.data)})`, '',
-    ...itens.map((i) => `• ${fmtNum(i.quantidade)}x ${i.descricao}${i.serie ? ` (IMEI ${i.serie})` : ''} — ${fmtMoeda(i.total_centavos)}${i.garantia_dias ? ` · garantia até ${fmtData(somarDias(venda.data, i.garantia_dias))}` : ''}`),
+    ...itens.map((i) => `• ${fmtNum(i.quantidade)}x ${i.descricao}${i.serie ? ` (IMEI ${i.serie}${i.detalhes ? ' · ' + textoAparelho(i.detalhes) : ''})` : ''} — ${fmtMoeda(i.total_centavos)}${i.garantia_dias ? ` · garantia até ${fmtData(somarDias(venda.data, i.garantia_dias))}` : ''}`),
     venda.desconto_centavos ? `Desconto: ${fmtMoeda(venda.desconto_centavos)}` : null,
     `*Total: ${fmtMoeda(venda.total_centavos)}*`,
     `Pagamento: ${pags.map((p) => `${FORMAS[p.forma]}${p.parcelas > 1 ? ` ${p.parcelas}x` : ''} ${fmtMoeda(p.valor_centavos)}`).join(' + ')}`,
@@ -337,7 +352,7 @@ export function imprimirRecibo({ venda, itens, pags }) {
     <h2>Recibo de venda nº ${venda.numero}</h2>
     <p>Data: <b>${fmtData(venda.data)}</b> · Atendente: ${esc(venda.vendedor_nome || '')}<br>Cliente: <b>${esc(venda.cliente_nome || 'Consumidor')}</b>${venda.cliente_telefone ? ` · ${fmtTelefone(venda.cliente_telefone)}` : ''}</p>
     <table><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Unit.</th><th class="num">Total</th></tr></thead><tbody>
-      ${itens.map((i) => `<tr><td>${esc(i.descricao)}${i.serie ? `<br><small>IMEI/Série: ${esc(i.serie)}</small>` : ''}${i.devolvido_qtd > 0 ? '<br><small>(devolvido)</small>' : ''}</td><td class="num">${fmtNum(i.quantidade)}</td><td class="num">${fmtMoeda(i.preco_unitario_centavos)}</td><td class="num">${fmtMoeda(i.total_centavos)}</td></tr>`).join('')}
+      ${itens.map((i) => `<tr><td>${esc(i.descricao)}${i.serie ? `<br><small>IMEI/Série: ${esc(i.serie)}${i.detalhes ? '<br>' + esc(textoAparelho(i.detalhes)) : ''}</small>` : ''}${i.devolvido_qtd > 0 ? '<br><small>(devolvido)</small>' : ''}</td><td class="num">${fmtNum(i.quantidade)}</td><td class="num">${fmtMoeda(i.preco_unitario_centavos)}</td><td class="num">${fmtMoeda(i.total_centavos)}</td></tr>`).join('')}
     </tbody></table>
     <table><tbody>
       <tr><td>Subtotal</td><td class="num">${fmtMoeda(venda.subtotal_centavos)}</td></tr>
@@ -505,7 +520,7 @@ export async function detalhe(el, ctx) {
       </div>
       <div>
         <div class="card"><div class="card-topo"><h3>Itens</h3></div><div class="tabela-wrap"><table class="tabela"><thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Unit.</th><th class="num">Total</th>${lucro ? '<th class="num esconder-cel">Custo un.</th>' : ''}</tr></thead><tbody>
-          ${itens.map((i) => `<tr><td><b>${esc(i.descricao)}</b><div class="muted pequeno">${[i.categoria, i.serie ? `IMEI ${i.serie}` : '', i.garantia_dias ? `garantia ${i.garantia_dias} dias (até ${fmtData(somarDias(v.data, i.garantia_dias))})` : ''].filter(Boolean).map(esc).join(' · ')}</div>
+          ${itens.map((i) => `<tr><td><b>${esc(i.descricao)}</b><div class="muted pequeno">${[i.categoria, i.serie ? `IMEI ${i.serie}` : '', textoAparelho(i.detalhes), i.garantia_dias ? `garantia ${i.garantia_dias} dias (até ${fmtData(somarDias(v.data, i.garantia_dias))})` : ''].filter(Boolean).map(esc).join(' · ')}</div>
             ${i.devolvido_qtd > 0 ? `<div>${tag(`${fmtNum(i.devolvido_qtd)} devolvido(s)`, 'warn')}</div>` : ''}</td>
             <td class="num">${fmtNum(i.quantidade)}</td><td class="num">${fmtMoeda(i.preco_unitario_centavos)}${i.preco_unitario_centavos < i.preco_tabela_centavos ? `<div class="muted pequeno">tab. ${fmtMoeda(i.preco_tabela_centavos)}</div>` : ''}</td>
             <td class="num">${fmtMoeda(i.total_centavos)}</td>${lucro ? `<td class="num esconder-cel">${i.custo_unitario_centavos == null ? '' : fmtMoeda(i.custo_unitario_centavos)}</td>` : ''}</tr>`).join('')}
