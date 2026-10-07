@@ -4,6 +4,7 @@ import {
   consulta, lista as listaCache, limparCache, cabecalho, vazio, carregando, tag, icone, valorDinheiro, aplicarTema, textoSobre, contraste, CARGOS, lerNumero,
 } from '../core.js';
 import { aplicarMarca, recarregarSessao } from '../main.js';
+import * as conta from './conta.js';
 
 const SECOES = [
   ['empresa', 'Empresa e aparência', 'config.gerenciar'],
@@ -11,6 +12,9 @@ const SECOES = [
   ['permissoes', 'Permissões', 'config.gerenciar'],
   ['categorias', 'Categorias', 'config.gerenciar'],
   ['pagamentos', 'Pagamentos e contas', 'config.gerenciar'],
+  ['textos', 'Textos e checklists', 'config.gerenciar'],
+  ['horario', 'Horário', 'config.gerenciar'],
+  ['dados', 'Backup e LGPD', 'backup.baixar'],
   ['auditoria', 'Histórico', 'auditoria.ver'],
 ];
 const abas = (atual) => `<nav class="abas-pagina">${SECOES.filter(([, , p]) => pode(p)).map(([id, r]) => `<a href="#/config/${id}" class="${id === atual ? 'ativa' : ''}">${r}</a>`).join('')}</nav>`;
@@ -19,7 +23,8 @@ export async function tela(el, ctx) {
   const secao = ctx.params[0];
   const sec = SECOES.find(([id]) => id === secao);
   if (!sec || !pode(sec[2])) { el.innerHTML = vazio('Sem acesso', 'Seu usuário não pode abrir esta tela.'); return; }
-  await ({ empresa, usuarios, permissoes, categorias, pagamentos, auditoria })[secao](el, ctx);
+  const extra = { textos: (e, c) => conta.textos(e, c, abas('textos')), horario: (e, c) => conta.horario(e, c, abas('horario')), dados: (e, c) => conta.dados(e, c, abas('dados')) };
+  await ({ empresa, usuarios, permissoes, categorias, pagamentos, auditoria, ...extra })[secao](el, ctx);
 }
 
 // =====================================================================
@@ -68,17 +73,12 @@ async function empresa(el, ctx) {
           <label>Alerta de aparelho parado (dias)<input name="dias_alerta_aparelho_parado" type="number" min="1" max="3650" value="${e.dias_alerta_aparelho_parado ?? 60}"></label>
           <label>Garantia do serviço de OS (dias)<input name="garantia_os_dias" type="number" min="0" max="3650" value="${e.garantia_os_dias ?? 90}"></label>
           <label>OS sem retirada vira "abandonada" após (dias)<input name="dias_abandono_os" type="number" min="7" max="3650" value="${e.dias_abandono_os ?? 90}"></label>
-          <label class="col-2">Checklist de entrada da OS <span class="dica-campo muted">(um item por linha)</span><textarea name="checklist_os" rows="5">${esc((e.checklist_os || []).join('\n'))}</textarea></label>
-          <label class="col-2">Termos do comprovante de entrada da OS <span class="dica-campo muted">(impresso para o cliente assinar)</span><textarea name="texto_os_entrada" rows="3">${esc(e.texto_os_entrada || '')}</textarea></label>
           <label>Reserva: segurar aparelho por (dias)<input name="reserva_dias_padrao" type="number" min="1" max="90" value="${e.reserva_dias_padrao ?? 7}"></label>
           <label>Orçamento válido por (dias)<input name="orcamento_validade_dias" type="number" min="1" max="90" value="${e.orcamento_validade_dias ?? 7}"></label>
-          <label class="col-2">Declaração do termo de compra/troca de aparelho <span class="dica-campo muted">(impressa no termo que o cliente assina)</span><textarea name="texto_termo_compra" rows="3">${esc(e.texto_termo_compra || '')}</textarea></label>
-          <label class="col-2">Checklist de teste dos aparelhos <span class="dica-campo muted">(um item por linha)</span><textarea name="checklist_aparelho" rows="5">${esc((e.checklist_aparelho || []).join('\n'))}</textarea></label>
           <label>Sair sozinho após (minutos parado)<input name="sessao_inatividade_min" type="number" min="0" max="1440" value="${e.sessao_inatividade_min ?? 60}"></label>
           <p class="muted pequeno col-2" style="margin-top:-6px">Encerra a sessão do computador que ficar sem uso. Use 0 para nunca sair sozinho.</p>
           <label class="check col-2"><input type="checkbox" name="permitir_estoque_negativo" ${e.permitir_estoque_negativo ? 'checked' : ''}> Permitir vender sem estoque (estoque fica negativo)</label>
-          <label class="col-2">Texto no rodapé do recibo<textarea name="texto_recibo" rows="2">${esc(e.texto_recibo)}</textarea></label>
-          <label class="col-2">Termo de garantia<textarea name="texto_garantia" rows="3">${esc(e.texto_garantia)}</textarea></label>
+          <p class="muted pequeno col-2">Textos impressos e checklists ficam em <a href="#/config/textos">Textos e checklists</a>; horário da loja em <a href="#/config/horario">Horário</a>.</p>
         </div></div>
       </div>
     </div>
@@ -136,14 +136,10 @@ async function empresa(el, ctx) {
       dias_alerta_aparelho_parado: Math.max(1, Number(f.dias_alerta_aparelho_parado.value) || 60),
       garantia_os_dias: Math.min(3650, Math.max(0, Number(f.garantia_os_dias.value) || 0)),
       dias_abandono_os: Math.min(3650, Math.max(7, Number(f.dias_abandono_os.value) || 90)),
-      checklist_os: [...new Set(f.checklist_os.value.split('\n').map((x) => x.trim()).filter(Boolean))],
-      texto_os_entrada: f.texto_os_entrada.value.trim() || null,
       reserva_dias_padrao: Math.min(90, Math.max(1, Number(f.reserva_dias_padrao.value) || 7)),
       orcamento_validade_dias: Math.min(90, Math.max(1, Number(f.orcamento_validade_dias.value) || 7)),
-      texto_termo_compra: f.texto_termo_compra.value.trim() || null,
-      checklist_aparelho: [...new Set(f.checklist_aparelho.value.split('\n').map((x) => x.trim()).filter(Boolean))],
       sessao_inatividade_min: Math.min(1440, Math.max(0, Number(f.sessao_inatividade_min.value) || 0)), ibge,
-      permitir_estoque_negativo: f.permitir_estoque_negativo.checked, texto_recibo: v('texto_recibo'), texto_garantia: v('texto_garantia'),
+      permitir_estoque_negativo: f.permitir_estoque_negativo.checked,
     };
     const btn = $('button[type=submit]', f); btn.disabled = true;
     try {
@@ -178,13 +174,14 @@ function reduzirImagem(arq, max) {
 async function usuarios(el, ctx) {
   const ps = await consulta(estado.sb.from('perfis').select('*').order('ativo', { ascending: false }).order('nome'));
   if (!ctx.ativo()) return;
-  el.innerHTML = `${abas('usuarios')}${cabecalho('Usuários', { sub: 'Quem pode entrar no sistema e com qual cargo.' })}
-    <div class="alerta" style="cursor:default">${icone('alerta')}<span><b>Para criar um usuário novo:</b> no Supabase, abra <i>Authentication › Users › Add user</i>, informe e-mail e senha e marque <i>Auto Confirm User</i>. Ele aparece aqui como <b>Vendedor</b> — depois é só mudar o cargo.</span></div>
+  el.innerHTML = `${abas('usuarios')}${cabecalho('Usuários', { sub: 'Quem pode entrar no sistema e com qual cargo. Clique no nome para mudar cargo, comissão, bloquear ou redefinir a senha.',
+    acoes: `<button class="btn btn-primary" type="button" id="b-novo-func">${icone('mais')} Novo funcionário</button>` })}
     <div class="card"><div class="tabela-wrap"><table class="tabela"><thead><tr><th>Nome</th><th class="esconder-cel">E-mail</th><th>Cargo</th><th class="num esconder-cel">Meta mensal</th><th>Situação</th></tr></thead><tbody>
       ${ps.map((p) => `<tr class="clicavel" data-id="${p.user_id}"><td><b>${esc(p.nome)}</b>${p.user_id === estado.perfil.user_id ? ' <small class="muted">(você)</small>' : ''}<div class="muted pequeno">${fmtTelefone(p.telefone) || ''}</div></td>
         <td class="esconder-cel">${esc(p.email || '')}</td><td>${tag(CARGOS[p.cargo] || p.cargo, p.cargo === 'gerente' ? '' : 'cinza')}</td>
         <td class="num esconder-cel">${p.meta_mensal_centavos ? fmtMoeda(p.meta_mensal_centavos) : '—'}</td><td>${p.ativo ? tag('Ativo', 'ok') : tag('Bloqueado', 'danger')}</td></tr>`).join('')}
     </tbody></table></div></div>`;
+  $('#b-novo-func', el).addEventListener('click', async () => { if (await conta.novoFuncionario()) { limparCache('perfis'); usuarios(el, ctx); } });
   $$('tr[data-id]', el).forEach((tr) => tr.addEventListener('click', async () => {
     const p = ps.find((x) => x.user_id === tr.dataset.id);
     const eu = p.user_id === estado.perfil.user_id;
@@ -199,10 +196,11 @@ async function usuarios(el, ctx) {
           <label>Comissão sobre mão de obra das OS (%)<input name="co" inputmode="decimal" value="${String(Number(p.comissao_os_pct || 0)).replace('.', ',')}"></label></div>
         <p class="muted pequeno">A comissão é só uma sugestão: você confere, ajusta e fecha o mês em Comissões.</p>
         <label class="check"><input type="checkbox" name="ativo" ${p.ativo ? 'checked' : ''} ${eu ? 'disabled' : ''}> Pode entrar no sistema</label>
-        ${eu ? '<p class="muted pequeno">Você não pode bloquear o próprio acesso.</p>' : ''}`,
+        ${eu ? '<p class="muted pequeno">Você não pode bloquear o próprio acesso. Para trocar sua senha use Minha conta.</p>' : '<button class="btn btn-ghost btn-sm" type="button" data-senha>Redefinir senha</button>'}`,
       aoAbrir: (f) => {
         const upd = () => { $('[data-cargo-txt]', f).textContent = { gerente: 'Gerente pode tudo, inclusive configurações.', vendedor: 'Vendedor: o que estiver marcado em Permissões › Vendedor.', tecnico: 'Técnico: o que estiver marcado em Permissões › Técnico.' }[f.cargo.value]; };
         f.cargo.addEventListener('change', upd); upd();
+        $('[data-senha]', f)?.addEventListener('click', () => conta.redefinirSenha(p));
       },
       aoSalvar: async (f) => {
         if (f.nome.value.trim().length < 2) { f.erro('Informe o nome.'); return false; }
@@ -432,7 +430,7 @@ async function pagamentos(el, ctx) {
 const TABELAS = {
   clientes: 'Clientes', vendas: 'Vendas', devolucoes: 'Devoluções', produtos: 'Produtos', entradas: 'Entradas de mercadoria', titulos: 'Contas a pagar/receber',
   baixas: 'Pagamentos/recebimentos', recorrencias: 'Despesas fixas', contas_financeiras: 'Contas', formas_pagamento: 'Formas de pagamento', categorias: 'Categorias',
-  perfis: 'Usuários', permissoes_cargo: 'Permissões', empresa: 'Empresa', fornecedores: 'Fornecedores', compras: 'Compras (antigo)', lancamentos: 'Caixa (antigo)',
+  perfis: 'Usuários', permissoes_cargo: 'Permissões', empresa: 'Empresa', acesso: 'Acesso fora do horário', leads: 'Interessados (CRM)', lista_espera: 'Lista de espera', fornecedores: 'Fornecedores', compras: 'Compras (antigo)', lancamentos: 'Caixa (antigo)',
 };
 const IGNORAR = new Set(['atualizado_em', 'criado_em', 'logo']);
 const audF = { tabela: '', de: '' };
@@ -446,7 +444,10 @@ async function auditoria(el, ctx) {
     </div><div id="lista">${carregando()}</div><div class="rodape-tabela"><button class="btn btn-ghost btn-sm" id="b-mais" type="button" hidden>Carregar mais</button></div></div>`;
   const nome = (id) => perfis.find((p) => p.user_id === id)?.nome || (id ? 'usuário removido' : 'sistema');
   let pagina = 0; let itens = [];
+  const ESPECIAIS = { CRIAR_USUARIO: 'Criou o acesso de', REDEFINIR_SENHA: 'Redefiniu a senha de', LIBERAR: 'Liberou o acesso fora do horário', BLOQUEAR: 'Encerrou a liberação de acesso fora do horário' };
   const resumo = (a) => {
+    if (ESPECIAIS[a.acao]) return `${ESPECIAIS[a.acao]} ${a.registro_texto && a.tabela === 'perfis' ? `<b>${esc(a.registro_texto)}</b>` : ''}${a.depois?.ate ? ` até ${fmtDataHora(a.depois.ate)}` : ''}`;
+    if (a.depois?.anonimizado) return '<span class="muted">dados anonimizados (LGPD)</span>';
     if (a.acao === 'INSERT') {
       const d = a.depois || {};
       return `Criou ${esc(d.nome || d.descricao || (d.numero ? `nº ${d.numero}` : '') || d.permissao || '')}`;

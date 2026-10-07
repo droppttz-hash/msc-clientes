@@ -80,6 +80,21 @@ export function textoAparelho(d) {
   return [CONDICOES_APARELHO[d.condicao] || d.condicao, d.grau && `grau ${d.grau}`, d.bateria_pct != null && `bateria ${d.bateria_pct}%`,
     d.cor, d.capacidade, d.imei2 && `IMEI 2 ${d.imei2}`, d.pecas_trocadas && `peças trocadas: ${d.pecas_trocadas}`].filter(Boolean).join(' · ');
 }
+export const DIAS_SEMANA = [['1', 'Segunda'], ['2', 'Terça'], ['3', 'Quarta'], ['4', 'Quinta'], ['5', 'Sexta'], ['6', 'Sábado'], ['7', 'Domingo']];
+// "Seg a sex 9h–18h · Sáb 9h–13h" (agrupa dias seguidos com o mesmo horário)
+export function textoHorario(emp = estado.empresa) {
+  const h = emp?.horario; if (!h) return '';
+  const curto = { 1: 'seg', 2: 'ter', 3: 'qua', 4: 'qui', 5: 'sex', 6: 'sáb', 7: 'dom' };
+  const hr = (t) => { const [a, b] = String(t).split(':'); return `${Number(a)}h${b && b !== '00' ? b : ''}`; };
+  const grupos = [];
+  for (let d = 1; d <= 7; d += 1) {
+    const x = h[String(d)]; if (!x) continue;
+    const faixa = `${hr(x.abre)}–${hr(x.fecha)}`;
+    const g = grupos[grupos.length - 1];
+    if (g && g.faixa === faixa && g.fim === d - 1) g.fim = d; else grupos.push({ ini: d, fim: d, faixa });
+  }
+  return grupos.map((g) => { const n = g.ini === g.fim ? curto[g.ini] : `${curto[g.ini]} a ${curto[g.fim]}`; return `${n[0].toUpperCase()}${n.slice(1)} ${g.faixa}`; }).join(' · ');
+}
 export const CARGOS = { gerente: 'Gerente', vendedor: 'Vendedor', tecnico: 'Técnico' };
 
 // Dinheiro digitado → centavos ("1.234,56" ou "R$ 1.234,56" ou "1234.5")
@@ -357,6 +372,7 @@ const P = {
   zap: '<path d="M3.5 20.5 5 16a8.5 8.5 0 1 1 3.2 3z"/><path d="M9 9.5c.3 2 2.5 4.3 4.6 4.6l1.4-1.3 2 1-.5 1.7c-3.6.4-8-4-7.6-7.6L10.6 7l1 2z"/>',
   recolher: '<path d="m15 18-6-6 6-6"/>',
   aparelho: '<rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/>',
+  funil: '<path d="M3 4h18l-7 8.5V19l-4 2v-8.5z"/>',
   ferramenta: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9z"/>',
 };
 export const icone = (nome, cls = '') => `<svg class="ico ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[nome] || ''}</svg>`;

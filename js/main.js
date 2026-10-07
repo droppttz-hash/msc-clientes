@@ -3,7 +3,7 @@
 // =====================================================================
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config.js';
 import {
-  estado, pode, podeAlgum, $, $$, esc, icone, aplicarTema, toast, msgErro, rpc, consulta, fmtMoeda, limparCache, fmtTelefone,
+  estado, pode, podeAlgum, $, $$, esc, icone, aplicarTema, toast, msgErro, rpc, consulta, fmtMoeda, limparCache, fmtTelefone, textoHorario,
 } from './core.js';
 
 // ---------------------------------------------------------------------
@@ -25,6 +25,13 @@ const MENU = [
   { id: 'clientes', rotulo: 'Clientes', icone: 'clientes', perm: ['clientes.ver'], filhos: [
     { rotulo: 'Clientes', href: '#/clientes' },
     { rotulo: 'Aniversariantes', href: '#/clientes/aniversariantes' },
+  ] },
+  { id: 'crm', rotulo: 'CRM', icone: 'funil', perm: ['crm.usar', 'crm.ver_todos', 'crm.campanhas'], filhos: [
+    { rotulo: 'Hoje', href: '#/crm', perm: ['crm.usar', 'crm.ver_todos'], badge: 'crm_hoje' },
+    { rotulo: 'Funil de interessados', href: '#/crm/funil', perm: ['crm.usar', 'crm.ver_todos'] },
+    { rotulo: 'Lista de espera', href: '#/crm/espera', perm: ['crm.usar', 'crm.ver_todos'], badge: 'espera_chegou' },
+    { rotulo: 'Campanhas WhatsApp', href: '#/crm/campanhas', perm: ['crm.campanhas'] },
+    { rotulo: 'Modelos de mensagem', href: '#/crm/modelos', perm: ['crm.modelos', 'crm.campanhas'] },
   ] },
   { id: 'aparelhos', rotulo: 'Aparelhos', icone: 'aparelho', perm: ['estoque.ver'], filhos: [
     { rotulo: 'Em estoque', href: '#/aparelhos' },
@@ -51,6 +58,11 @@ const MENU = [
     { rotulo: 'Fluxo de caixa', href: '#/financas/fluxo', perm: ['financeiro.relatorios'] },
     { rotulo: 'DRE (resultado)', href: '#/financas/dre', perm: ['financeiro.relatorios'] },
   ] },
+  { id: 'fiscal', rotulo: 'Fiscal', icone: 'impressora', perm: ['fiscal.notas', 'fiscal.config'], filhos: [
+    { rotulo: 'Notas fiscais', href: '#/fiscal' },
+    { rotulo: 'Configuração fiscal', href: '#/fiscal/config', perm: ['fiscal.config'] },
+    { rotulo: 'Pacote do contador', href: '#/fiscal/contador', perm: ['fiscal.config'] },
+  ] },
   { id: 'comissao', rotulo: 'Minha comissão', icone: 'financas', href: '#/comissoes', perm: ['comissoes.ver_proprias'], esconder: ['comissoes.gerir'] },
   { id: 'config', rotulo: 'Configurações', icone: 'config', perm: ['config.gerenciar', 'auditoria.ver'], filhos: [
     { rotulo: 'Empresa e aparência', href: '#/config/empresa', perm: ['config.gerenciar'] },
@@ -58,6 +70,9 @@ const MENU = [
     { rotulo: 'Permissões', href: '#/config/permissoes', perm: ['config.gerenciar'] },
     { rotulo: 'Categorias', href: '#/config/categorias', perm: ['config.gerenciar'] },
     { rotulo: 'Pagamentos e contas', href: '#/config/pagamentos', perm: ['config.gerenciar'] },
+    { rotulo: 'Textos e checklists', href: '#/config/textos', perm: ['config.gerenciar'] },
+    { rotulo: 'Horário', href: '#/config/horario', perm: ['config.gerenciar'] },
+    { rotulo: 'Backup e LGPD', href: '#/config/dados', perm: ['backup.baixar'], badge: 'backup_atrasado' },
     { rotulo: 'Histórico de alterações', href: '#/config/auditoria', perm: ['auditoria.ver'] },
   ] },
 ];
@@ -103,7 +118,16 @@ const ROTAS = [
   [/^#\/financas\/dre$/, 'financas', 'dre'],
   [/^#\/financas\/conciliacao$/, 'financas', 'conciliacao'],
   [/^#\/comissoes$/, 'comissoes', 'tela'],
-  [/^#\/config\/(empresa|usuarios|permissoes|categorias|pagamentos|auditoria)$/, 'config', 'tela'],
+  [/^#\/conta$/, 'conta', 'minhaConta'],
+  [/^#\/fiscal$/, 'fiscal', 'notas'],
+  [/^#\/fiscal\/config$/, 'fiscal', 'config'],
+  [/^#\/fiscal\/contador$/, 'fiscal', 'contador'],
+  [/^#\/crm$/, 'crm', 'hoje'],
+  [/^#\/crm\/funil$/, 'crm', 'funil'],
+  [/^#\/crm\/espera$/, 'crm', 'espera'],
+  [/^#\/crm\/campanhas$/, 'crm', 'campanhas'],
+  [/^#\/crm\/modelos$/, 'crm', 'telaModelos'],
+  [/^#\/config\/(empresa|usuarios|permissoes|categorias|pagamentos|textos|horario|dados|auditoria)$/, 'config', 'tela'],
 ];
 const MODULOS = {
   inicio: () => import('./telas/inicio.js'),
@@ -115,6 +139,9 @@ const MODULOS = {
   compras: () => import('./telas/compras.js'),
   os: () => import('./telas/os.js'),
   comissoes: () => import('./telas/comissoes.js'),
+  crm: () => import('./telas/crm.js'),
+  conta: () => import('./telas/conta.js'),
+  fiscal: () => import('./telas/fiscal.js'),
   financas: () => import('./telas/financas.js'),
   config: () => import('./telas/config.js'),
 };
@@ -234,6 +261,8 @@ const NOVOS = [
   { rotulo: 'Nova OS (assistência)', perm: 'os.criar', href: '#/os/nova' },
   { rotulo: 'Reservar aparelho', perm: 'vendas.reservar', acao: async () => { const r = await (await import('./telas/orcamentos.js')).novaReserva(); if (r) location.hash = `#/vendas/reservas/${r.id}`; } },
   { rotulo: 'Comprar aparelho de cliente', perm: 'aparelhos.comprar', acao: async () => { const r = await (await import('./telas/compras.js')).comprarAparelho(); if (r) location.hash = `#/aparelhos/compras/${r.id}`; } },
+  { rotulo: 'Novo interessado (CRM)', perm: 'crm.usar', acao: async () => (await import('./telas/crm.js')).formLead() },
+  { rotulo: 'Cliente na lista de espera', perm: 'crm.usar', acao: async () => (await import('./telas/crm.js')).formEspera() },
   { rotulo: 'Novo cliente', perm: 'clientes.criar', acao: async () => (await import('./telas/clientes.js')).novoCliente() },
   { rotulo: 'Novo produto', perm: 'estoque.produtos', acao: async () => (await import('./telas/estoque.js')).novoProduto() },
   { rotulo: 'Entrada de mercadoria', perm: 'estoque.entrada', href: '#/estoque/entradas/nova' },
@@ -263,14 +292,21 @@ document.addEventListener('click', (e) => {
 // ---------------------------------------------------------------------
 export async function atualizarAvisos() {
   try { estado.painel = await rpc('painel'); } catch { return; }
+  if (estado.perfil && estado.perfil.cargo !== 'gerente' && estado.empresa?.restringir_horario) {
+    try { const a = await rpc('acesso_status'); if (!a.liberado) { logado = false; avisoHorario(estado.empresa); return; } } catch { /* ok */ }
+  }
+  if (podeAlgum('crm.usar', 'crm.ver_todos')) { try { estado.crm = await rpc('crm_resumo'); } catch { estado.crm = null; } }
   atualizarBadges();
 }
 function atualizarBadges() {
   const p = estado.painel || {};
-  const nums = { aguardando_aprovacao: p.aguardando_aprovacao || 0, pagar_vencido: p.pagar?.vencido ? 1 : 0 };
+  const k = estado.crm || {};
+  const nums = { aguardando_aprovacao: p.aguardando_aprovacao || 0, pagar_vencido: p.pagar?.vencido ? 1 : 0,
+    backup_atrasado: pode('backup.baixar') && (!estado.empresa?.ultimo_backup_em || Date.now() - new Date(estado.empresa.ultimo_backup_em).getTime() > 7 * 86400000) ? 1 : 0,
+    crm_hoje: (k.leads_retorno || 0) + (k.espera_chegou || 0) + (k.aniversario_hoje || 0), espera_chegou: k.espera_chegou || 0 };
   $$('[data-badge]').forEach((b) => {
     const n = nums[b.dataset.badge]; b.hidden = !n;
-    b.textContent = b.dataset.badge === 'pagar_vencido' ? '!' : n;
+    b.textContent = ['pagar_vencido', 'backup_atrasado'].includes(b.dataset.badge) ? '!' : n;
   });
   $$('[data-badge-grupo]').forEach((b) => {
     const sub = b.closest('.menu-grupo').querySelector('.submenu');
@@ -282,6 +318,9 @@ function atualizarBadges() {
   if (p.pagar?.hoje) avisos.push(`<a href="#/financas/pagar" class="aviso"><b>Vence hoje: ${fmtMoeda(p.pagar.hoje)}</b><br><small class="muted">Contas a pagar</small></a>`);
   if (p.receber?.vencido) avisos.push(`<a href="#/financas/receber" class="aviso"><b>A receber em atraso: ${fmtMoeda(p.receber.vencido)}</b></a>`);
   if (p.estoque_baixo_qtd) avisos.push(`<a href="#/estoque" class="aviso"><b>${p.estoque_baixo_qtd} produto(s) com estoque baixo</b></a>`);
+  if (nums.backup_atrasado) avisos.push(`<a href="#/config/dados" class="aviso"><b>Faça o backup da semana</b><br><small class="muted">${estado.empresa?.ultimo_backup_em ? 'Último há mais de 7 dias' : 'Nenhum backup baixado ainda'}</small></a>`);
+  if (k.leads_retorno) avisos.push(`<a href="#/crm" class="aviso"><b>${k.leads_retorno} interessado(s) para retornar</b><br><small class="muted">CRM · funil</small></a>`);
+  if (k.espera_chegou) avisos.push(`<a href="#/crm/espera" class="aviso"><b>Chegou aparelho para ${k.espera_chegou} cliente(s) da lista de espera</b><br><small class="muted">Avise pelo WhatsApp</small></a>`);
   (p.aniversariantes_hoje || []).forEach((c) => avisos.push(`<a href="#/clientes/${c.id}" class="aviso"><b>🎂 Aniversário: ${esc(c.nome)}</b>${c.telefone ? `<br><small class="muted">${fmtTelefone(c.telefone)}</small>` : ''}</a>`));
   $('#avisos-badge').hidden = !avisos.length;
   $('#avisos-badge').textContent = avisos.length;
@@ -383,6 +422,10 @@ function marcaLogin() {
 // ---------------------------------------------------------------------
 // Login
 // ---------------------------------------------------------------------
+function avisoHorario(emp) {
+  const h = textoHorario(emp || {});
+  aviso('Fora do horário de funcionamento', `O sistema fica disponível para a equipe no horário da loja${h ? ` (${h})` : ''}. Se precisar entrar agora, peça ao gerente para liberar o acesso.`, true);
+}
 function aviso(titulo, texto, sair = false) {
   $('#tela-login').hidden = true; $('#app').hidden = true;
   $('#tela-aviso').hidden = false;
@@ -400,13 +443,15 @@ async function entrar(session) {
   if (logado || carregando) return;
   carregando = true;
   try {
-    const [perfil, perms, empresa] = await Promise.all([
+    const [perfil, perms, empresa, acesso] = await Promise.all([
       consulta(estado.sb.from('perfis').select('*').eq('user_id', session.user.id).maybeSingle()),
       rpc('minhas_permissoes'),
       consulta(estado.sb.from('empresa').select('*').eq('id', 1).maybeSingle()),
+      rpc('acesso_status').catch(() => null),
     ]);
     if (!perfil) return aviso('Sem acesso', 'Seu usuário ainda não foi liberado. Peça ao gerente.', true);
     if (!perfil.ativo) return aviso('Acesso bloqueado', 'Seu acesso está bloqueado. Fale com o gerente.', true);
+    if (acesso && !acesso.liberado) return avisoHorario(empresa);
     estado.perfil = perfil; estado.perms = new Set(perms || []); estado.empresa = empresa || {};
     aplicarMarca();
     $('#usuario-nome').textContent = perfil.nome;
@@ -419,6 +464,7 @@ async function entrar(session) {
     atualizarAvisos();
     if (!estado.timerAvisos) estado.timerAvisos = setInterval(atualizarAvisos, 5 * 60 * 1000);
     if (!location.hash || location.hash === '#' || location.hash === '#/') location.hash = '#/inicio'; else render();
+    if (session.user?.user_metadata?.trocar_senha) (await import('./telas/conta.js')).trocarMinhaSenha({ obrigatoria: true });
   } catch (err) {
     aviso('Não deu para entrar', msgErro(err), true);
   } finally { carregando = false; }
@@ -470,7 +516,8 @@ $('#btn-usuario').addEventListener('click', async () => {
   const { abrirModal } = await import('./core.js');
   const r = await abrirModal({
     titulo: estado.perfil.nome, largura: 'sm', botao: 'Sair do sistema', botaoClasse: 'btn-danger', cancelar: 'Fechar',
-    corpo: `<p class="muted">${esc(estado.perfil.email || '')}</p><p>Cargo: <b>${esc($('#usuario-cargo').textContent)}</b></p>`,
+    corpo: `<p class="muted">${esc(estado.perfil.email || '')}</p><p>Cargo: <b>${esc($('#usuario-cargo').textContent)}</b></p>
+      <a class="btn btn-ghost btn-sm" href="#/conta" data-fechar>Minha conta e senha</a>`,
   });
   if (r) sair();
 });

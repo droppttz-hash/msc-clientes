@@ -2,7 +2,7 @@
 import {
   estado, pode, $, $$, esc, textoAparelho, uid, fmtMoeda, fmtData, fmtDataHora, fmtTelefone, fmtNum, fmtPct, hojeSP, somarDias, addMeses, ultimoDiaMes,
   linkZap, abrirModal, pedirMotivo, toast, msgErro, rpc, consulta, buscarTudo, lista as listaCache, baixarCsv, csvMoeda, cabecalho, vazio, carregando,
-  tag, kpi, icone, valorDinheiro, setDinheiro, FORMAS, CONDICOES, imprimir, diaSP, lerNumero,
+  tag, kpi, icone, valorDinheiro, setDinheiro, FORMAS, CONDICOES, imprimir, diaSP, lerNumero, textoHorario,
 } from '../core.js';
 import { atualizarAvisos } from '../main.js';
 
@@ -433,6 +433,7 @@ export function imprimirRecibo({ venda, itens, pags }) {
       ${e.texto_garantia ? `<p class="muted" style="margin:8px 0 0">${esc(e.texto_garantia)}</p>` : ''}</div>` : ''}
     ${venda.observacao ? `<p>Obs.: ${esc(venda.observacao)}</p>` : ''}
     ${e.texto_recibo ? `<p class="muted">${esc(e.texto_recibo)}</p>` : ''}
+    ${textoHorario(e) ? `<p class="muted pequeno">Horário de atendimento: ${textoHorario(e)}</p>` : ''}
     <div class="assin"><div>${esc(e.nome_fantasia || '')}</div><div>Cliente</div></div>`);
 }
 
@@ -598,6 +599,7 @@ export async function detalhe(el, ctx) {
       ${v.cliente_telefone && v.status !== 'cancelada' ? `<a class="btn btn-ghost" target="_blank" rel="noopener" href="${linkZap(v.cliente_telefone, textoWhats(d))}">${icone('zap')} WhatsApp</a>` : ''}
       ${v.status !== 'cancelada' && temGarantia(itens) ? `<button class="btn btn-ghost" id="b-garantia" type="button">${icone('impressora')} Termo de garantia</button>` : ''}
       ${v.status !== 'cancelada' && temGarantia(itens) && v.cliente_telefone ? `<a class="btn btn-ghost" target="_blank" rel="noopener" href="${linkZap(v.cliente_telefone, textoWhatsGarantia(d))}">${icone('zap')} Garantia no WhatsApp</a>` : ''}
+      ${['concluida', 'devolvida'].includes(v.status) && (pode('fiscal.notas') || pode('fiscal.config')) ? '<button class="btn btn-ghost" id="b-nf" type="button">Nota fiscal</button>' : ''}
       ${!v.cliente_id && v.status !== 'cancelada' && (pode('vendas.ver_todas') || v.criado_por === estado.perfil.user_id) ? '<button class="btn btn-ghost" id="b-cli" type="button">Vincular cliente</button>' : ''}
       ${v.status === 'aguardando_aprovacao' && pode('vendas.aprovar') ? '<button class="btn btn-ok" id="b-aprovar" type="button">Aprovar desconto</button>' : ''}
       ${v.status === 'concluida' && pode('vendas.devolver') ? '<button class="btn btn-ghost" id="b-dev" type="button">Devolução / troca</button>' : ''}
@@ -637,6 +639,7 @@ export async function detalhe(el, ctx) {
 
   $('#b-recibo', el)?.addEventListener('click', () => imprimirRecibo(d));
   $('#b-garantia', el)?.addEventListener('click', () => imprimirTermoGarantia(d));
+  $('#b-nf', el)?.addEventListener('click', async () => { (await import('./fiscal.js')).abrirNota({ venda: v.id }); });
   $('#b-cli', el)?.addEventListener('click', async () => {
     const { escolherCliente } = await import('./clientes.js');
     const c = await escolherCliente(); if (!c) return;

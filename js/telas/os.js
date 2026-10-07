@@ -2,8 +2,9 @@
 import {
   estado, pode, $, $$, esc, fmtMoeda, fmtData, fmtDataHora, fmtTelefone, fmtNum, fmtCpf, fmtCnpj, hojeSP, somarDias, linkZap, lerNumero,
   abrirModal, pedirMotivo, confirmar, toast, msgErro, rpc, consulta, buscarTudo, lista as listaCache, cabecalho, vazio, carregando, tag, kpi, icone,
-  valorDinheiro, setDinheiro, FORMAS, imprimir,
+  valorDinheiro, setDinheiro, FORMAS, imprimir, textoHorario,
 } from '../core.js';
+import { modelos, montarTexto } from './crm.js';
 
 export const STATUS = {
   aberta: ['Aberta', 'warn'], diagnostico: ['Em diagnóstico', 'warn'], aguardando_aprovacao: ['Aguardando aprovação', 'warn'], aprovada: ['Aprovada', 'warn'],
@@ -248,7 +249,7 @@ function imprimirEntrada(o) {
       ${o.estado_entrada ? `<br><b>Estado na entrada:</b> ${esc(o.estado_entrada)}` : ''}${o.tem_senha ? '<br>Senha do aparelho informada (guardada com segurança e apagada na entrega).' : ''}</div>
     ${chk.length ? `<h2>Checklist de entrada</h2><table><tbody>${chk.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${rot[v] || v}</td></tr>`).join('')}</tbody></table>` : ''}
     <p style="text-align:justify" class="muted">${esc(e.texto_os_entrada || '')}</p>
-    <p>Acompanhe pelo WhatsApp ${e.whatsapp || e.telefone ? fmtTelefone(e.whatsapp || e.telefone) : 'da loja'} informando o nº <b>${o.numero}</b>.</p>
+    <p>Acompanhe pelo WhatsApp ${e.whatsapp || e.telefone ? fmtTelefone(e.whatsapp || e.telefone) : 'da loja'} informando o nº <b>${o.numero}</b>.${textoHorario(e) ? `<br>Horário de atendimento: ${textoHorario(e)}.` : ''}</p>
     <div class="assin"><div>${esc(o.cliente_nome || '')}<br>Cliente</div><div>${esc(e.nome_fantasia || '')}</div></div>`);
 }
 function imprimirOrcamento(o, itens) {
@@ -272,7 +273,7 @@ function imprimirEntrega(o, itens, pags) {
     ${o.aprovado === false ? '<div class="caixa">Aparelho devolvido <b>sem reparo</b> (orçamento recusado pelo cliente).</div>' : `${o.diagnostico ? `<div class="caixa"><b>Serviço:</b> ${esc(o.diagnostico)}</div>` : ''}${linhaItens(itens)}`}
     <table><tbody><tr><td class="total">Total pago</td><td class="num total">${fmtMoeda(o.total_centavos)}</td></tr>
       ${pags.map((p) => `<tr><td>${FORMAS[p.forma] || p.forma}${p.parcelas > 1 ? ` em ${p.parcelas}x` : ''}</td><td class="num">${fmtMoeda(p.valor_centavos)}</td></tr>`).join('')}</tbody></table>
-    ${o.garantia_ate ? `<div class="caixa"><b>Garantia do serviço até ${fmtData(o.garantia_ate)}</b> (${o.garantia_dias} dias). Cobre o serviço e as peças trocadas. Não cobre queda, contato com líquido, mau uso ou violação por terceiros.${e.texto_garantia ? `<br>${esc(e.texto_garantia)}` : ''}</div>` : ''}
+    ${o.garantia_ate ? `<div class="caixa"><b>Garantia do serviço até ${fmtData(o.garantia_ate)}</b> (${o.garantia_dias} dias). ${esc(e.texto_os_garantia || 'Cobre o serviço e as peças trocadas. Não cobre queda, contato com líquido, mau uso ou violação por terceiros.')}</div>` : ''}
     <p>Declaro que recebi o aparelho acima${o.aprovado === false ? '' : ' funcionando'} e conferi os acessórios deixados${o.acessorios ? ` (${esc(o.acessorios)})` : ''}.</p>
     <div class="assin"><div>${esc(o.cliente_nome || '')}<br>Cliente</div><div>${esc(e.nome_fantasia || '')}</div></div>`);
 }
@@ -285,14 +286,16 @@ function zapOrcamento(o, itens) {
     `*Total: ${fmtMoeda(o.total_centavos)}*`, `Garantia: ${o.garantia_dias ?? estado.empresa?.garantia_os_dias ?? 90} dias.`, '',
     'Posso seguir com o reparo? Responda *SIM* para aprovar.'].filter((x) => x !== null).join('\n');
 }
-const zapPronta = (o) => `Olá, ${(o.cliente_nome || '').split(' ')[0]}! Seu ${o.aparelho} (OS nº ${o.numero}) está pronto para retirada na ${estado.empresa?.nome_fantasia || 'loja'}. Valor: ${fmtMoeda(o.total_centavos)}. Te esperamos!`;
-const zapAbandono = (o) => `Olá, ${(o.cliente_nome || '').split(' ')[0]}! Seu ${o.aparelho} (OS nº ${o.numero}) está na ${estado.empresa?.nome_fantasia || 'loja'} aguardando retirada há ${o.dias_aguardando_retirada} dias. Por favor, venha buscar. Após ${estado.empresa?.dias_abandono_os || 90} dias o aparelho pode ser considerado abandonado.`;
+let MODS = [];
+const zapPronta = (o) => montarTexto(MODS.find((m) => m.codigo === 'os_pronta'), { nome: o.cliente_nome, aparelho: o.aparelho, os: o.numero, valor: fmtMoeda(o.total_centavos) }) || `Olá, ${(o.cliente_nome || '').split(' ')[0]}! Seu ${o.aparelho} (OS nº ${o.numero}) está pronto para retirada na ${estado.empresa?.nome_fantasia || 'loja'}. Valor: ${fmtMoeda(o.total_centavos)}. Te esperamos!`;
+const zapAbandono = (o) => montarTexto(MODS.find((m) => m.codigo === 'os_abandono'), { nome: o.cliente_nome, aparelho: o.aparelho, os: o.numero, dias: o.dias_aguardando_retirada, limite: estado.empresa?.dias_abandono_os || 90 }) || `Olá, ${(o.cliente_nome || '').split(' ')[0]}! Seu ${o.aparelho} (OS nº ${o.numero}) está na ${estado.empresa?.nome_fantasia || 'loja'} aguardando retirada há ${o.dias_aguardando_retirada} dias. Por favor, venha buscar. Após ${estado.empresa?.dias_abandono_os || 90} dias o aparelho pode ser considerado abandonado.`;
 
 // =====================================================================
 // DETALHE
 // =====================================================================
 export async function detalhe(el, ctx) {
   const id = ctx.params[0];
+  try { MODS = await modelos(); } catch { MODS = []; }
   const [rows, itens, eventos, fotos, pags] = await Promise.all([
     consulta(estado.sb.from('os_lista').select('*').eq('id', id)),
     consulta(estado.sb.from('os_itens').select('*').eq('os_id', id).order('criado_em')),
@@ -322,6 +325,7 @@ export async function detalhe(el, ctx) {
     !encerrada && (pode('os.editar') || pode('os.criar')) ? '<button class="btn btn-ghost" type="button" id="b-edit">Editar dados</button>' : '',
     o.status === 'entregue' && o.garantia_ate && o.garantia_ate >= hoje && pode('os.criar') ? '<button class="btn btn-ghost" type="button" id="b-garantia">Retorno em garantia</button>' : '',
     '<button class="btn btn-ghost" type="button" id="b-nota">Anotar</button>',
+    o.status === 'entregue' && !o.interna && (pode('fiscal.notas') || pode('fiscal.config')) ? '<button class="btn btn-ghost" type="button" id="b-nf">Nota fiscal (NFS-e)</button>' : '',
     pode('os.cancelar') && o.pode_abandonar ? '<button class="btn btn-ghost" type="button" id="b-abandono" style="color:var(--danger)">Marcar abandonado</button>' : '',
     pode('os.cancelar') && !encerrada ? '<button class="btn btn-ghost" type="button" id="b-cancelar" style="color:var(--danger)">Cancelar OS</button>' : '',
   ].filter(Boolean).join('');
@@ -411,6 +415,7 @@ export async function detalhe(el, ctx) {
     }
     tentar(() => rpc('mudar_status_os', { p_os: id, p_status: s, p_obs: obs }), 'Situação atualizada');
   }));
+  $('#b-nf', el)?.addEventListener('click', async () => { (await import('./fiscal.js')).abrirNota({ os: o.id }); });
   $('#b-orc', el)?.addEventListener('click', async () => { if (await editarOrcamento(o, itens)) recarregar(); });
   $('#b-aprov', el)?.addEventListener('click', async () => {
     const r = await abrirModal({

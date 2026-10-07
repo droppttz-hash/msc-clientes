@@ -198,6 +198,7 @@ function imprimirOrcamento(o) {
       <tr><td class="total">Total</td><td class="num total">${fmtMoeda(o.total_centavos)}</td></tr>
     </tbody></table>
     ${o.condicoes ? `<div class="caixa"><b>Condições:</b> ${esc(o.condicoes)}</div>` : ''}
+    ${e.texto_orcamento ? `<p class="muted" style="text-align:justify">${esc(e.texto_orcamento)}</p>` : ''}
     ${o.observacao ? `<p>Obs.: ${esc(o.observacao)}</p>` : ''}
     <p class="muted">Orçamento sem reserva de estoque. Preços e disponibilidade válidos até ${fmtData(o.validade)}.${e.telefone ? ` Dúvidas: ${fmtTelefone(e.telefone)}.` : ''}</p>`);
 }
@@ -349,7 +350,7 @@ function imprimirComprovanteReserva(r) {
       <tr><td>Sinal pago (${esc(r.forma_nome || FORMAS[r.forma] || r.forma)})</td><td class="num">${fmtMoeda(r.valor_sinal_centavos)}</td></tr>
       <tr><td class="total">Restante</td><td class="num total">${fmtMoeda(Math.max(0, r.preco_venda_centavos - r.valor_sinal_centavos))}</td></tr>
     </tbody></table>
-    <p>O aparelho fica reservado até <b>${fmtData(r.validade)}</b>. Depois dessa data a loja pode liberar o aparelho para venda.</p>
+    <p>Reservado até <b>${fmtData(r.validade)}</b>. ${esc(estado.empresa?.texto_reserva || 'Depois dessa data a loja pode liberar o aparelho para venda.')}</p>
     ${r.observacao ? `<p>Obs.: ${esc(r.observacao)}</p>` : ''}
     <div class="assin"><div>${esc(estado.empresa?.nome_fantasia || '')}</div><div>Cliente</div></div>`);
 }

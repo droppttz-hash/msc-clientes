@@ -10,7 +10,8 @@ Roda em **Supabase** (banco e login) e **Vercel** (site). Nos planos grátis, o 
 | `index.html`, `css/`, `js/` | O sistema (telas) |
 | `config.js` | Endereço e chave pública do Supabase |
 | `vercel.json` | Configurações de segurança do site |
-| `supabase/*.sql` | Banco de dados, para rodar **em ordem** (01, 02, … 22) num projeto novo; o 09 só faz algo no banco antigo da MSC |
+| `supabase/*.sql` | Banco de dados, para rodar **em ordem** (01, 02, … 28) num projeto novo; o 09 só faz algo no banco antigo da MSC |
+| `supabase/functions/equipe/` | Função do Supabase que cria funcionários e redefine senhas (já publicada no projeto da MSC). Num projeto novo: `supabase functions deploy equipe --no-verify-jwt` |
 
 ## Atualizar o site da MSC (GitHub → Vercel)
 

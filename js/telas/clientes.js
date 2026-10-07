@@ -109,6 +109,7 @@ const tagOs = (s) => tag(...(OS_ST[s] || [s, 'cinza']));
 // ---------------------------------------------------------------------
 export async function ficha(el, ctx) {
   const id = ctx.params[0];
+  const crm = pode('crm.usar') || pode('crm.ver_todos');
   const [cli, vendas, extras] = await Promise.all([
     consulta(estado.sb.from('clientes_lista').select('*').eq('id', id).maybeSingle()),
     consulta(estado.sb.from('vendas_lista').select('*').eq('cliente_id', id).order('data', { ascending: false }).order('numero', { ascending: false }).limit(200)),
@@ -117,9 +118,13 @@ export async function ficha(el, ctx) {
       pode('vendas.orcamento') || pode('vendas.ver_todas') ? consulta(estado.sb.from('orcamentos_lista').select('id,numero,total_centavos,status,validade,vencido,criado_em').eq('cliente_id', id).order('criado_em', { ascending: false })).catch(() => []) : [],
       consulta(estado.sb.from('avaliacoes_lista').select('id,numero,tipo,produto,imei,valor_centavos,status,criado_em').eq('cliente_id', id).order('criado_em', { ascending: false })).catch(() => []),
       pode('os.ver') ? consulta(estado.sb.from('os_lista').select('id,numero,aparelho,status,total_centavos,criado_em,garantia_ate').eq('cliente_id', id).order('criado_em', { ascending: false })).catch(() => []) : [],
+      crm ? consulta(estado.sb.from('leads_lista').select('id,numero,interesse,etapa,proximo_contato,atrasado,responsavel_nome,criado_em').eq('cliente_id', id).order('criado_em', { ascending: false })).catch(() => []) : [],
+      crm ? consulta(estado.sb.from('lista_espera_lista').select('*').eq('cliente_id', id).order('criado_em', { ascending: false })).catch(() => []) : [],
+      consulta(estado.sb.from('clientes_consentimentos').select('aceita,meio,registrado_em').eq('cliente_id', id).order('registrado_em', { ascending: false })).catch(() => []),
     ]),
   ]);
-  const [reservas, orcs, avals, oss] = extras;
+  const [reservas, orcs, avals, oss, leads, esperas, consent] = extras;
+  const ETAPAS = { novo: 'Novo', em_contato: 'Em contato', proposta: 'Proposta', ganho: 'Ganho', perdido: 'Perdido' };
   if (!ctx.ativo()) return;
   if (!cli) { el.innerHTML = vazio('Cliente não encontrado', '<a href="#/clientes">Voltar</a>'); return; }
   const endereco = [[cli.logradouro, cli.numero].filter(Boolean).join(', '), cli.complemento, cli.bairro,
@@ -132,6 +137,7 @@ export async function ficha(el, ctx) {
     <div class="lado-a-lado">
       <div class="card card-pad">
         <h2 style="font-size:20px">${esc(cli.nome)} ${cli.tipo_pessoa === 'pj' ? tag('Pessoa jurídica', 'cinza') : ''}</h2>
+        ${cli.anonimizado_em ? `<div class="alerta" style="cursor:default">Dados pessoais apagados a pedido do titular (LGPD) em ${fmtData(cli.anonimizado_em)}. O histórico continua, sem identificar a pessoa.</div>` : ''}
         <p class="muted pequeno" style="margin:4px 0 14px">Cliente desde ${fmtData(cli.criado_em)}${cli.cadastrado_por ? ` · por ${esc(cli.cadastrado_por)}` : ''} ${cli.ativo ? '' : tag('inativo', 'cinza')}</p>
         <dl class="dl">
           <div><dt>Telefone</dt><dd>${cli.telefone ? `<a class="zap" href="${linkZap(cli.telefone)}" target="_blank" rel="noopener">${fmtTelefone(cli.telefone)} · WhatsApp</a>` : '—'}</dd></div>
@@ -142,13 +148,17 @@ export async function ficha(el, ctx) {
           ${cli.tags?.length ? `<div><dt>Etiquetas</dt><dd>${chips(cli.tags)}</dd></div>` : ''}
           <div><dt>Nascimento</dt><dd>${cli.data_nascimento ? `${fmtData(cli.data_nascimento)} (${idade(cli.data_nascimento)} anos)` : '—'}</dd></div>
           <div><dt>Endereço</dt><dd>${endereco || '—'}</dd></div>
-          <div><dt>Marketing</dt><dd>${cli.aceita_marketing ? `Aceita receber ofertas ${cli.aceita_marketing_em ? `(desde ${fmtData(cli.aceita_marketing_em)})` : ''}` : 'Não autorizou ofertas'}</dd></div>
+          <div><dt>Ofertas (LGPD)</dt><dd>${cli.aceita_marketing ? `Aceita receber ofertas ${cli.aceita_marketing_em ? `(desde ${fmtData(cli.aceita_marketing_em)})` : ''}` : 'Não autorizou ofertas'}
+            ${pode('clientes.editar') || pode('crm.usar') ? ` · <button class="link-btn" type="button" id="btn-consent">${cli.aceita_marketing ? 'pediu para sair' : 'autorizou agora'}</button>` : ''}
+            ${consent.length ? `<details class="pequeno muted"><summary>histórico</summary>${consent.map((c) => `${fmtData(c.registrado_em)}: ${c.aceita ? 'autorizou' : 'saiu'} (${esc(c.meio)})`).join('<br>')}</details>` : ''}</dd></div>
           ${cli.observacoes ? `<div><dt>Observações</dt><dd>${esc(cli.observacoes)}</dd></div>` : ''}
         </dl>
         <div class="separador"></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${pode('clientes.editar') ? '<button class="btn btn-ghost btn-sm" id="btn-editar" type="button">Editar dados</button>' : ''}
           ${pode('clientes.inativar') ? `<button class="btn btn-ghost btn-sm" id="btn-ativo" type="button">${cli.ativo ? 'Inativar' : 'Reativar'}</button>` : ''}
+          ${pode('clientes.lgpd') && !cli.anonimizado_em ? '<button class="btn btn-ghost btn-sm" id="btn-exportar" type="button">Exportar dados (LGPD)</button><button class="btn btn-ghost btn-sm" id="btn-anonimizar" type="button" style="color:var(--danger)">Anonimizar</button>' : ''}
+          ${pode('crm.usar') && cli.ativo ? '<button class="btn btn-ghost btn-sm" id="btn-lead" type="button">+ Interessado</button><button class="btn btn-ghost btn-sm" id="btn-espera" type="button">+ Lista de espera</button>' : ''}
         </div>
       </div>
       <div>
@@ -171,6 +181,12 @@ export async function ficha(el, ctx) {
           ${oss.length ? `<div class="tabela-wrap"><table class="tabela"><tbody>
           ${oss.map((o) => `<tr class="clicavel" data-href="#/os/${o.id}"><td>OS nº ${o.numero} · ${fmtData(o.criado_em)}<div class="muted pequeno">${esc(o.aparelho)}${o.garantia_ate ? ` · garantia até ${fmtData(o.garantia_ate)}` : ''}</div></td>
             <td class="num">${o.total_centavos ? fmtMoeda(o.total_centavos) : ''}</td><td class="num">${tagOs(o.status)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted card-pad">Nenhuma OS.</p>'}</div>` : ''}
+        ${leads.length || esperas.length ? `<div class="card" style="margin-top:16px"><div class="card-topo"><h3>Interesses e lista de espera</h3><a class="pequeno" href="#/crm">CRM</a></div><div class="tabela-wrap"><table class="tabela"><tbody>
+          ${leads.map((l) => `<tr class="clicavel" data-lead="${l.id}"><td>Procura ${esc(l.interesse)}<div class="muted pequeno">${fmtData(l.criado_em)}${l.responsavel_nome ? ` · ${esc(l.responsavel_nome)}` : ''}</div></td>
+            <td class="num">${tag(ETAPAS[l.etapa], l.etapa === 'ganho' ? 'ok' : l.etapa === 'perdido' ? 'cinza' : 'warn')}${l.atrasado ? ' ' + tag('retorno atrasado', 'danger') : ''}</td></tr>`).join('')}
+          ${esperas.map((e) => `<tr class="clicavel" data-href="#/crm/espera"><td>Lista de espera: ${esc(e.modelo)}${e.capacidade ? ' ' + esc(e.capacidade) : ''}<div class="muted pequeno">desde ${fmtData(e.criado_em)}</div></td>
+            <td class="num">${tag({ aguardando: 'Aguardando', avisado: 'Avisado', atendido: 'Atendido', cancelado: 'Cancelado' }[e.status], e.status === 'cancelado' ? 'cinza' : e.status === 'aguardando' ? 'warn' : 'ok')}${e.compativeis ? ' ' + tag('chegou aparelho', 'ok') : ''}</td></tr>`).join('')}
+          </tbody></table></div></div>` : ''}
         ${reservas.length ? `<div class="card" style="margin-top:16px"><div class="card-topo"><h3>Reservas</h3></div><div class="tabela-wrap"><table class="tabela"><tbody>
           ${reservas.map((r) => `<tr class="clicavel" data-href="#/vendas/reservas/${r.id}"><td>nº ${r.numero} · ${esc(r.produto)}<div class="muted pequeno">IMEI ${esc(r.imei)}</div></td><td class="num">sinal ${fmtMoeda(r.valor_sinal_centavos)}</td>
             <td class="num">${r.status === 'ativa' ? (r.vencida ? tag('Vencida', 'danger') : tag(`até ${fmtData(r.validade)}`, 'warn')) : tag(r.status === 'convertida' ? 'Virou venda' : 'Cancelada', 'cinza')}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
@@ -190,6 +206,20 @@ export async function ficha(el, ctx) {
     if (error) return toast(msgErro(error), 'erro');
     toast(cli.ativo ? 'Cliente inativado (o histórico continua guardado)' : 'Cliente reativado');
     ficha(el, ctx);
+  });
+  $('#btn-exportar', el)?.addEventListener('click', async () => { try { await (await import('./conta.js')).exportarCliente(cli); } catch (err) { toast(msgErro(err), 'erro'); } });
+  $('#btn-anonimizar', el)?.addEventListener('click', async () => { if (await (await import('./conta.js')).anonimizarCliente(cli)) ficha(el, ctx); });
+  $('#btn-lead', el)?.addEventListener('click', async () => { if (await (await import('./crm.js')).formLead(null, { id: cli.id, nome: cli.nome })) ficha(el, ctx); });
+  $('#btn-espera', el)?.addEventListener('click', async () => { if (await (await import('./crm.js')).formEspera(null, { id: cli.id, nome: cli.nome })) ficha(el, ctx); });
+  $$('tr[data-lead]', el).forEach((tr) => tr.addEventListener('click', async () => { await (await import('./crm.js')).detalheLead(tr.dataset.lead); ficha(el, ctx); }));
+  $('#btn-consent', el)?.addEventListener('click', async () => {
+    const r = await abrirModal({
+      titulo: cli.aceita_marketing ? 'Cliente pediu para não receber ofertas' : 'Cliente autorizou receber ofertas', largura: 'sm', botao: 'Registrar',
+      corpo: `<p class="muted pequeno">Fica guardado no histórico do cliente (LGPD): data, quem registrou e como foi.</p>
+        <label>Como foi *<input name="meio" placeholder="${cli.aceita_marketing ? 'Ex.: respondeu SAIR no WhatsApp' : 'Ex.: autorizou no balcão, por WhatsApp'}" autofocus></label>`,
+      aoSalvar: async (f) => { await rpc('registrar_consentimento', { p_cliente: cli.id, p_aceita: !cli.aceita_marketing, p_meio: f.meio.value }); return true; },
+    });
+    if (r) { toast('Registrado'); ficha(el, ctx); }
   });
   $('#btn-vender', el)?.addEventListener('click', () => { estado.preCliente = { id: cli.id, nome: cli.nome }; location.hash = '#/vendas/nova'; });
   $$('tr[data-venda]', el).forEach((tr) => tr.addEventListener('click', () => { location.hash = `#/vendas/${tr.dataset.venda}`; }));
@@ -334,6 +364,6 @@ export async function aniversariantes(el, ctx) {
   $('#corpo', el).innerHTML = data.length ? `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Dia</th><th>Cliente</th><th class="esconder-cel">Faz</th><th>WhatsApp</th></tr></thead><tbody>
     ${data.map((c) => `<tr><td><b>${c.data_nascimento.slice(8)}/${c.data_nascimento.slice(5, 7)}</b> ${c.data_nascimento.slice(5) === hoje.slice(5) ? tag('hoje', 'ok') : ''}</td>
       <td><a href="#/clientes/${c.id}">${esc(c.nome)}</a></td><td class="esconder-cel">${Number(hoje.slice(0, 4)) - Number(c.data_nascimento.slice(0, 4))} anos</td>
-      <td>${c.telefone ? `<a class="zap" target="_blank" rel="noopener" href="${linkZap(c.telefone, `Feliz aniversário, ${c.nome.split(' ')[0]}! A equipe da ${loja} deseja um novo ano cheio de conquistas. Passa aqui na loja, temos um mimo esperando por você!`)}">Mandar parabéns</a>` : '<span class="muted">sem telefone</span>'}</td></tr>`).join('')}
+      <td>${!c.aceita_marketing ? '<span class="tag cinza" title="O cliente não autorizou receber mensagens (LGPD)">Não autorizou mensagens</span>' : c.telefone ? `<a class="zap" target="_blank" rel="noopener" href="${linkZap(c.telefone, `Feliz aniversário, ${c.nome.split(' ')[0]}! A equipe da ${loja} deseja um novo ano cheio de conquistas. Passa aqui na loja, temos um mimo esperando por você!`)}">Mandar parabéns</a>` : '<span class="muted">sem telefone</span>'}</td></tr>`).join('')}
     </tbody></table></div>` : vazio(`Nenhum aniversariante em ${MESES[mesAniv - 1]}`, 'Cadastre a data de nascimento dos clientes para aparecerem aqui.');
 }
