@@ -99,7 +99,9 @@ export async function nova(el, ctx) {
   }
 
   function resumo() {
-    $('#cli-nome', el).textContent = carrinho.cliente ? carrinho.cliente.nome : 'Venda balcão (sem cliente)';
+    const temImei = carrinho.itens.some((i) => i.serieId);
+    $('#cli-nome', el).innerHTML = carrinho.cliente ? esc(carrinho.cliente.nome)
+      : temImei ? '<span class="neg">Obrigatório: venda com IMEI</span>' : 'Venda balcão (sem cliente)';
     $('#btn-cli-x', el).hidden = !carrinho.cliente;
     $('#r-sub', el).textContent = fmtMoeda(subtotal());
     const dg = $('#desc-geral', el); if (document.activeElement !== dg) setDinheiro(dg, carrinho.descontoGeral);
@@ -241,6 +243,9 @@ export async function nova(el, ctx) {
   async function finalizar() {
     const erroEl = $('#pdv-erro', el); erroEl.hidden = true;
     if (!carrinho.itens.length) { erroEl.textContent = 'Adicione pelo menos um item.'; erroEl.hidden = false; return; }
+    if (!carrinho.cliente && carrinho.itens.some((i) => i.serieId)) {
+      erroEl.textContent = 'Venda de aparelho (com IMEI) precisa de cliente: clique em “Escolher” no campo Cliente.'; erroEl.hidden = false; return;
+    }
     let pags = carrinho.pagamentos.filter((p) => p.valor > 0).map((p) => ({ ...p }));
     let falta = total() - pags.reduce((s, p) => s + p.valor, 0);
     const din = pags.find((p) => p.forma === 'dinheiro');

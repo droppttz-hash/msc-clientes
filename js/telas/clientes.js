@@ -167,6 +167,7 @@ export async function novoCliente(nomeInicial = '') {
 
 export function formCliente(cli, nomeInicial = '') {
   let avisoDup = null;
+  let ibge; // só vai para o banco quando o CEP for consultado
   return abrirModal({
     titulo: cli ? 'Editar cliente' : 'Novo cliente', largura: 'lg', botao: 'Salvar cliente',
     corpo: `<div class="form-grade">
@@ -187,13 +188,14 @@ export function formCliente(cli, nomeInicial = '') {
     aoAbrir: (f) => {
       f.cep.addEventListener('input', async () => {
         const cep = soDigitos(f.cep.value); const st = $('[data-cep-status]', f);
-        if (cep.length !== 8) { st.textContent = ''; return; }
+        if (cep.length !== 8) { st.textContent = ''; ibge = null; return; }
         st.textContent = 'buscando…';
         try {
           const j = await (await fetch(`https://viacep.com.br/ws/${cep}/json/`)).json();
           if (soDigitos(f.cep.value) !== cep) return;
           if (j.erro) { st.textContent = 'CEP não encontrado'; return; }
           f.logradouro.value = j.logradouro || ''; f.bairro.value = j.bairro || ''; f.cidade.value = j.localidade || ''; f.uf.value = j.uf || '';
+          ibge = /^\d{7}$/.test(j.ibge || '') ? j.ibge : null;
           st.textContent = '✓'; f.numero.focus();
         } catch { st.textContent = 'preencha à mão'; }
       });
@@ -206,6 +208,7 @@ export function formCliente(cli, nomeInicial = '') {
         logradouro: v(f.logradouro.value), numero: v(f.numero.value), complemento: v(f.complemento.value), bairro: v(f.bairro.value),
         cidade: v(f.cidade.value), uf: v(f.uf.value.toUpperCase()), observacoes: v(f.observacoes.value), aceita_marketing: f.aceita_marketing.checked,
       };
+      if (ibge !== undefined) d.ibge = d.cep ? ibge : null;
       if (d.nome.length < 2) { f.erro('Informe o nome.'); return false; }
       if (d.telefone && !/^\d{10,11}$/.test(d.telefone)) { f.erro('Telefone inválido: DDD + número.'); return false; }
       if (d.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email)) { f.erro('E-mail inválido.'); return false; }

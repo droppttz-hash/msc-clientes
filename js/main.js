@@ -377,6 +377,7 @@ async function entrar(session) {
     montarMenu(); montarNovo(); montarBarraInferior();
     $('#tela-login').hidden = true; $('#tela-aviso').hidden = true; $('#app').hidden = false;
     logado = true;
+    vigiarInatividade();
     atualizarAvisos();
     if (!estado.timerAvisos) estado.timerAvisos = setInterval(atualizarAvisos, 5 * 60 * 1000);
     if (!location.hash || location.hash === '#' || location.hash === '#/') location.hash = '#/inicio'; else render();
@@ -401,6 +402,29 @@ $('#form-login').addEventListener('submit', async (e) => {
   if (error) { $('#login-erro').textContent = /invalid/i.test(error.message) ? 'E-mail ou senha incorretos.' : msgErro(error); $('#login-erro').hidden = false; }
   else f.senha.value = '';
 });
+
+// Sai sozinho quando o computador fica parado (tempo em Configurações › Empresa)
+let ultimaAtividade = Date.now(); let vigia = null;
+function marcarAtividade() {
+  ultimaAtividade = Date.now();
+  try { localStorage.setItem('msc-atividade', String(ultimaAtividade)); } catch { /* ok */ }
+}
+['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach((ev) => document.addEventListener(ev, marcarAtividade, { passive: true }));
+function vigiarInatividade() {
+  marcarAtividade();
+  if (vigia) return;
+  vigia = setInterval(async () => {
+    const min = Number(estado.empresa?.sessao_inatividade_min ?? 60);
+    if (!logado || !min) return;
+    let ultima = ultimaAtividade;
+    try { ultima = Math.max(ultima, Number(localStorage.getItem('msc-atividade')) || 0); } catch { /* ok */ }
+    if (Date.now() - ultima > min * 60000) {
+      await sair();
+      $('#login-erro').textContent = 'Você saiu automaticamente por ficar um tempo sem usar o sistema. Entre de novo.';
+      $('#login-erro').hidden = false;
+    }
+  }, 30000);
+}
 
 async function sair() { await estado.sb.auth.signOut(); location.hash = ''; entrar(null); }
 $('#btn-sair-aviso').addEventListener('click', sair);

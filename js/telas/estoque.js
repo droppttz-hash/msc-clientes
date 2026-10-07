@@ -9,7 +9,7 @@ const TIPOS_MOV = {
   saldo_inicial: 'Saldo inicial', entrada_compra: 'Entrada (compra)', venda: 'Venda', cancelamento_venda: 'Venda cancelada', devolucao_cliente: 'Devolução de cliente',
   devolucao_fornecedor: 'Devolução ao fornecedor', ajuste: 'Ajuste', inventario: 'Inventário', perda: 'Perda / defeito', uso_os: 'Usado em OS', estorno_os: 'Estorno de OS',
 };
-const SERIE_ST = { disponivel: ['Disponível', 'ok'], reservado: ['Reservado', 'warn'], vendido: ['Vendido', 'cinza'], em_os: ['Em OS', 'warn'], devolvido_fornecedor: ['Devolvido ao fornecedor', 'cinza'], defeito: ['Defeito', 'danger'], baixado: ['Baixado', 'cinza'] };
+const SERIE_ST = { disponivel: ['Disponível', 'ok'], reservado: ['Reservado', 'warn'], vendido: ['Vendido', 'cinza'], em_os: ['Em OS', 'warn'], em_teste: ['Em teste', 'warn'], devolvido_fornecedor: ['Devolvido ao fornecedor', 'cinza'], defeito: ['Defeito', 'danger'], baixado: ['Baixado', 'cinza'] };
 
 // =====================================================================
 // PRODUTOS
@@ -149,11 +149,11 @@ export async function produto(el, ctx) {
       ${custo ? kpi('Custo médio', fmtMoeda(p.custo_medio_centavos), margem !== null ? `margem ${fmtNum(margem, 1)}%` : '') : ''}
       ${kpi('Garantia', p.garantia_dias != null ? `${p.garantia_dias} dias` : `${estado.empresa?.garantia_padrao_dias ?? '—'} dias`, p.garantia_dias == null ? 'padrão da loja' : '')}
     </div>
-    ${p.controla_serie ? `<div class="card"><div class="card-topo"><h3>Unidades (IMEI / nº de série)</h3><span class="muted pequeno">${series.filter((s) => s.status === 'disponivel').length} disponível(is)</span></div>
+    ${p.controla_serie ? `<div class="card"><div class="card-topo"><h3>Unidades (IMEI / nº de série)</h3><span class="muted pequeno">${series.filter((s) => s.status === 'disponivel').length} disponível(is)${series.some((s) => s.status === 'em_teste') ? ` · <span class="neg">${series.filter((s) => s.status === 'em_teste').length} em teste</span>` : ''}</span></div>
       ${series.length ? `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>IMEI / Série</th><th>Situação</th>${custo ? '<th class="num">Custo</th>' : ''}<th class="esconder-cel">Entrada</th><th></th></tr></thead><tbody>
       ${series.map((s) => `<tr><td><b>${esc(s.serie)}</b>${s.observacao ? `<div class="muted pequeno">${esc(s.observacao)}</div>` : ''}</td><td>${tag(SERIE_ST[s.status][0], SERIE_ST[s.status][1])}</td>
         ${custo ? `<td class="num">${fmtMoeda(s.custo_centavos)}</td>` : ''}<td class="esconder-cel">${fmtData(s.criado_em)}</td>
-        <td class="num">${s.status === 'disponivel' && pode('estoque.ajustar') ? `<button class="link-btn perigo" type="button" data-baixa="${s.id}" data-serie="${esc(s.serie)}">Dar baixa</button>` : ''}</td></tr>`).join('')}
+        <td class="num">${s.status === 'disponivel' && pode('estoque.ajustar') ? `<button class="link-btn perigo" type="button" data-baixa="${s.id}" data-serie="${esc(s.serie)}">Dar baixa</button>` : ''}${s.status === 'em_teste' && pode('estoque.ajustar') ? `<button class="btn btn-ghost btn-sm" type="button" data-teste="${s.id}" data-serie="${esc(s.serie)}">Concluir teste</button>` : ''}</td></tr>`).join('')}
       </tbody></table></div>` : vazio('Nenhuma unidade', 'Dê entrada de mercadoria informando os IMEIs.')}</div>` : ''}
     ${p.controla_estoque ? `<div class="card"><div class="card-topo"><h3>Movimentações (kardex)</h3><span class="muted pequeno">últimas 200</span></div>
       ${movs.length ? `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Quando</th><th>Tipo</th><th class="num">Qtd</th><th class="num">Saldo</th>${custo ? '<th class="num esconder-cel">Custo un.</th><th class="num esconder-cel">Custo médio</th>' : ''}<th class="esconder-cel">Detalhe</th></tr></thead><tbody>
@@ -176,6 +176,22 @@ export async function produto(el, ctx) {
     });
     if (ok) produto(el, ctx);
   });
+  $$('[data-teste]', el).forEach((b) => b.addEventListener('click', async () => {
+    const r = await abrirModal({
+      titulo: `Teste do IMEI ${b.dataset.serie}`, largura: 'sm', botao: 'Confirmar',
+      corpo: `<p class="muted">Aparelho devolvido por cliente. Depois de testar, libere para venda ou marque como defeito.</p>
+        <label class="check"><input type="radio" name="res" value="ok" checked> Aprovado: volta para venda</label>
+        <label class="check"><input type="radio" name="res" value="defeito"> Reprovado: vai para defeito e sai do estoque</label>
+        <label>Observação / defeito encontrado<input name="m" placeholder="Ex.: tudo ok / Face ID não funciona"></label>`,
+      aoSalvar: async (f) => {
+        const ok = f.res.value === 'ok';
+        if (!ok && f.m.value.trim().length < 3) { f.erro('Descreva o defeito encontrado.'); return false; }
+        await rpc('concluir_teste_serie', { p_serie: b.dataset.teste, p_aprovado: ok, p_motivo: f.m.value });
+        toast(ok ? 'Aparelho liberado para venda' : 'Aparelho marcado como defeito'); return true;
+      },
+    });
+    if (r) produto(el, ctx);
+  }));
   $$('[data-baixa]', el).forEach((b) => b.addEventListener('click', async () => {
     const r = await abrirModal({
       titulo: `Dar baixa no IMEI ${b.dataset.serie}`, largura: 'sm', botao: 'Dar baixa', botaoClasse: 'btn-danger',
