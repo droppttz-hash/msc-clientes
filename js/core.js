@@ -61,7 +61,17 @@ export function validarCpf(cpf) {
   return dv(9) === Number(d[9]) && dv(10) === Number(d[10]);
 }
 
-export const FORMAS = { dinheiro: 'Dinheiro', pix: 'PIX', debito: 'Débito', credito: 'Crédito', boleto: 'Boleto', crediario: 'Crediário', outro: 'Outro' };
+// CNPJ numérico ou alfanumérico (regra da Receita a partir de 2026)
+export const limparCnpj = (v) => String(v ?? '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+export function validarCnpj(cnpj) {
+  const v = limparCnpj(cnpj);
+  if (!/^[0-9A-Z]{12}[0-9]{2}$/.test(v) || /^(.)\1{13}$/.test(v)) return false;
+  const dv = (n, pesos) => { let s = 0; for (let i = 0; i < n; i++) s += (v.charCodeAt(i) - 48) * pesos[i]; const r = s % 11; return r < 2 ? 0 : 11 - r; };
+  return dv(12, [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]) === Number(v[12]) && dv(13, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]) === Number(v[13]);
+}
+export function fmtCnpj(c) { const v = limparCnpj(c); return v.length === 14 ? `${v.slice(0, 2)}.${v.slice(2, 5)}.${v.slice(5, 8)}/${v.slice(8, 12)}-${v.slice(12)}` : v; }
+export const COMO_CONHECEU = { instagram: 'Instagram', whatsapp: 'WhatsApp', indicacao: 'Indicação', passou_na_frente: 'Passou na frente da loja', google: 'Google', trafego_pago: 'Anúncio (tráfego pago)', outro: 'Outro' };
+export const FORMAS = { dinheiro: 'Dinheiro', pix: 'PIX', debito: 'Débito', credito: 'Crédito', boleto: 'Boleto', crediario: 'Crediário', outro: 'Outro', troca: 'Aparelho na troca', sinal: 'Sinal da reserva' };
 export const CONDICOES = { novo: 'Novo', seminovo: 'Seminovo', usado: 'Usado', recondicionado: 'Recondicionado' };
 export const CONDICOES_APARELHO = { lacrado: 'Lacrado', seminovo: 'Seminovo', usado: 'Usado' };
 // Retrato do aparelho em uma linha: "Seminovo · grau A · bateria 89% · Azul · 128GB"

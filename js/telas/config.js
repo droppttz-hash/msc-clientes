@@ -66,6 +66,9 @@ async function empresa(el, ctx) {
           <label>Garantia padrão (dias)<input name="garantia_padrao_dias" type="number" min="0" max="3650" value="${e.garantia_padrao_dias}"></label>
           <label>Alerta de cliente sem comprar (dias)<input name="dias_alerta_sem_compra" type="number" min="1" value="${e.dias_alerta_sem_compra}"></label>
           <label>Alerta de aparelho parado (dias)<input name="dias_alerta_aparelho_parado" type="number" min="1" max="3650" value="${e.dias_alerta_aparelho_parado ?? 60}"></label>
+          <label>Reserva: segurar aparelho por (dias)<input name="reserva_dias_padrao" type="number" min="1" max="90" value="${e.reserva_dias_padrao ?? 7}"></label>
+          <label>Orçamento válido por (dias)<input name="orcamento_validade_dias" type="number" min="1" max="90" value="${e.orcamento_validade_dias ?? 7}"></label>
+          <label class="col-2">Declaração do termo de compra/troca de aparelho <span class="dica-campo muted">(impressa no termo que o cliente assina)</span><textarea name="texto_termo_compra" rows="3">${esc(e.texto_termo_compra || '')}</textarea></label>
           <label class="col-2">Checklist de teste dos aparelhos <span class="dica-campo muted">(um item por linha)</span><textarea name="checklist_aparelho" rows="5">${esc((e.checklist_aparelho || []).join('\n'))}</textarea></label>
           <label>Sair sozinho após (minutos parado)<input name="sessao_inatividade_min" type="number" min="0" max="1440" value="${e.sessao_inatividade_min ?? 60}"></label>
           <p class="muted pequeno col-2" style="margin-top:-6px">Encerra a sessão do computador que ficar sem uso. Use 0 para nunca sair sozinho.</p>
@@ -127,6 +130,9 @@ async function empresa(el, ctx) {
       uf: (v('uf') || '').toUpperCase() || null, logo, cor_primaria: f.cor_primaria.value, cor_sidebar: f.cor_sidebar.value, modo_tema: f.modo_tema.value,
       desconto_max_pct: desc, garantia_padrao_dias: Number(f.garantia_padrao_dias.value) || 0, dias_alerta_sem_compra: Number(f.dias_alerta_sem_compra.value) || 90,
       dias_alerta_aparelho_parado: Math.max(1, Number(f.dias_alerta_aparelho_parado.value) || 60),
+      reserva_dias_padrao: Math.min(90, Math.max(1, Number(f.reserva_dias_padrao.value) || 7)),
+      orcamento_validade_dias: Math.min(90, Math.max(1, Number(f.orcamento_validade_dias.value) || 7)),
+      texto_termo_compra: f.texto_termo_compra.value.trim() || null,
       checklist_aparelho: [...new Set(f.checklist_aparelho.value.split('\n').map((x) => x.trim()).filter(Boolean))],
       sessao_inatividade_min: Math.min(1440, Math.max(0, Number(f.sessao_inatividade_min.value) || 0)), ibge,
       permitir_estoque_negativo: f.permitir_estoque_negativo.checked, texto_recibo: v('texto_recibo'), texto_garantia: v('texto_garantia'),
@@ -285,7 +291,7 @@ async function pagamentos(el, ctx) {
   el.innerHTML = `${abas('pagamentos')}${cabecalho('Pagamentos e contas', { sub: 'Taxas da maquininha, prazo de repasse e as contas onde o dinheiro fica.' })}
     <div class="card"><div class="card-topo"><h3>Formas de pagamento</h3></div>
       <div class="tabela-wrap"><table class="tabela"><thead><tr><th>Forma</th><th>Cai na conta</th><th class="num">Taxa</th><th class="num">Repasse</th><th class="esconder-cel">Baixa</th><th>Situação</th></tr></thead><tbody>
-      ${formas.map((x) => `<tr class="clicavel" data-forma="${x.forma}"><td><b>${esc(x.nome)}</b></td><td>${esc(nomeConta(x.conta_id))}</td>
+      ${formas.filter((x) => !x.interna).map((x) => `<tr class="clicavel" data-forma="${x.forma}"><td><b>${esc(x.nome)}</b></td><td>${esc(nomeConta(x.conta_id))}</td>
         <td class="num">${x.forma === 'credito' ? 'por parcela' : pct(x.taxa_pct)}</td><td class="num">${x.dias_repasse ? `D+${x.dias_repasse}` : 'na hora'}</td>
         <td class="esconder-cel">${x.forma === 'crediario' ? 'manual' : x.baixa_automatica ? 'automática' : 'manual'}${x.antecipar ? ' · antecipa' : ''}</td><td>${x.ativo ? tag('Ativa', 'ok') : tag('Inativa', 'cinza')}</td></tr>`).join('')}
       </tbody></table></div></div>

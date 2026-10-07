@@ -20,7 +20,7 @@ const nomeAparelho = (a) => {
 };
 
 function abas(atual) {
-  const itens = [['lista', 'Em estoque', '#/aparelhos'], pode('vendas.ver_lucro') && ['vendidos', 'Vendidos e lucro', '#/aparelhos/vendidos']].filter(Boolean);
+  const itens = [['lista', 'Em estoque', '#/aparelhos'], pode('vendas.ver_lucro') && ['vendidos', 'Vendidos e lucro', '#/aparelhos/vendidos'], ['compras', 'Compras e trocas', '#/aparelhos/compras']].filter(Boolean);
   return itens.length > 1 ? `<nav class="abas-pagina">${itens.map(([id, r, h]) => `<a href="${h}" class="${id === atual ? 'ativa' : ''}">${r}</a>`).join('')}</nav>` : '';
 }
 
@@ -131,6 +131,8 @@ export async function ficha(el, ctx) {
     editar && MOVEIS.includes(a.status) && '<button class="btn btn-ghost" type="button" id="b-status">Mudar situação</button>',
     a.status === 'em_teste' && pode('estoque.ajustar') && '<button class="btn btn-ghost" type="button" id="b-teste">Concluir teste</button>',
     a.status === 'disponivel' && pode('vendas.criar') && '<button class="btn btn-ghost" type="button" id="b-vender">Vender este aparelho</button>',
+    a.status === 'disponivel' && pode('vendas.reservar') && '<button class="btn btn-ghost" type="button" id="b-reservar">Reservar com sinal</button>',
+    a.status === 'reservado' && (pode('vendas.reservar') || pode('vendas.ver_todas')) && '<button class="btn btn-ghost" type="button" id="b-ver-res">Ver reserva</button>',
     '<button class="btn btn-ghost" type="button" id="b-nota">Anotar</button>',
     `<a class="btn btn-ghost" href="#/estoque/produto/${a.produto_id}">Ver produto</a>`,
   ].filter(Boolean).join('');
@@ -212,6 +214,16 @@ export async function ficha(el, ctx) {
     if (r) { toast('Teste registrado'); recarregar(); }
   });
   $('#b-vender', el)?.addEventListener('click', () => { estado.preAparelho = a.id; location.hash = '#/vendas/nova'; });
+  $('#b-reservar', el)?.addEventListener('click', async () => {
+    const { novaReserva } = await import('./orcamentos.js');
+    const r = await novaReserva({ serieId: a.id }); if (r) location.hash = `#/vendas/reservas/${r.id}`;
+  });
+  $('#b-ver-res', el)?.addEventListener('click', async () => {
+    try {
+      const [r] = await consulta(estado.sb.from('reservas').select('id').eq('serie_id', a.id).eq('status', 'ativa'));
+      if (r) location.hash = `#/vendas/reservas/${r.id}`; else toast('Reserva ativa não encontrada (pode estar presa a uma venda aguardando aprovação).', 'erro');
+    } catch (err) { toast(msgErro(err), 'erro'); }
+  });
   $('#b-nota', el).addEventListener('click', async () => {
     const ok = await abrirModal({
       titulo: 'Anotar na linha do tempo', largura: 'sm', botao: 'Anotar',

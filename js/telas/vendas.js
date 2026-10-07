@@ -15,16 +15,17 @@ const PARCELAVEL = ['credito', 'crediario', 'boleto'];
 // =====================================================================
 let carrinho = null;
 function novoCarrinho() {
-  carrinho = { chave: uid(), cliente: estado.preCliente || null, itens: [], descontoGeral: 0, pagamentos: [], observacao: '' };
+  carrinho = { chave: uid(), cliente: estado.preCliente || null, itens: [], descontoGeral: 0, pagamentos: [], observacao: '', trocas: [], reserva: null, orcamento: null };
   estado.preCliente = null;
 }
 
 export async function nova(el, ctx) {
   if (!pode('vendas.criar')) { el.innerHTML = vazio('Sem permissão', 'Seu usuário não pode fazer vendas.'); return; }
-  if (!carrinho || estado.preCliente) novoCarrinho();
+  if (!carrinho || estado.preCliente || estado.preOrcamento || estado.preReserva) novoCarrinho();
   const [formas, categorias] = await Promise.all([listaCache('formas'), listaCache('categorias')]);
   if (!ctx.ativo()) return;
-  const formasAtivas = formas.filter((f) => f.ativo);
+  const formasAtivas = formas.filter((f) => f.ativo && !f.interna);
+  if (!carrinho.trocas) Object.assign(carrinho, { trocas: [], reserva: null, orcamento: null });
   const catsVenda = categorias.filter((c) => c.tipo === 'venda' && c.ativo);
   const limiteDesc = Number(estado.empresa?.desconto_max_pct ?? 100);
 
@@ -56,6 +57,8 @@ export async function nova(el, ctx) {
           <span style="display:flex;gap:6px;align-items:center"><input id="desc-pct" inputmode="decimal" placeholder="%" style="width:64px;margin:0;padding:6px 8px"><input id="desc-geral" data-mascara="dinheiro" inputmode="numeric" placeholder="R$ 0,00" style="width:110px;margin:0;padding:6px 8px"></span></div>
         <div id="aviso-desc" class="alerta" style="margin:8px 0 0" hidden></div>
         <div class="pdv-linha" style="margin-top:8px"><span class="forte">Total</span><span class="pdv-total" id="r-total"></span></div>
+        <div id="creditos"></div>
+        ${pode('vendas.troca') ? '<button class="link-btn" type="button" id="btn-troca" style="margin-top:6px">+ Aparelho do cliente na troca</button>' : ''}
         <div class="separador"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>Pagamento</b><button class="link-btn" type="button" id="btn-pag">+ outra forma</button></div>
         <div id="pags"></div>
@@ -63,6 +66,7 @@ export async function nova(el, ctx) {
         <label style="margin-top:8px">Observação<input id="obs" placeholder="Ex.: garantia, IMEI, cor…" value="${esc(carrinho.observacao)}"></label>
         <p class="erro" id="pdv-erro" hidden style="margin-top:10px"></p>
         <button class="btn btn-primary btn-lg btn-block" type="button" id="btn-finalizar" style="margin-top:12px">Finalizar venda (F8)</button>
+        ${pode('vendas.orcamento') ? '<button class="btn btn-ghost btn-block" type="button" id="btn-orc" style="margin-top:8px">Salvar como orçamento</button>' : ''}
         <button class="btn btn-ghost btn-block" type="button" id="btn-limpar" style="margin-top:8px">Limpar</button>
       </div>
     </div>`;
@@ -77,6 +81,8 @@ export async function nova(el, ctx) {
   const tabela = () => carrinho.itens.reduce((s, i) => s + Math.round(i.qtd * i.precoTabela), 0);
   const descPct = () => { const t = tabela(); return t ? Math.max(0, (t - total()) / t * 100) : 0; };
   const pagos = () => carrinho.pagamentos.reduce((s, p) => s + (p.valor || 0), 0);
+  const creditos = () => carrinho.trocas.reduce((s, t) => s + t.valor_centavos, 0) + (carrinho.reserva?.valor || 0);
+  const aPagar = () => Math.max(0, total() - creditos());
 
   function desenhar() {
     const corpo = $('#itens', el);
@@ -113,15 +119,24 @@ export async function nova(el, ctx) {
       av.hidden = false; av.className = precisa ? 'alerta' : 'alerta info';
       av.innerHTML = `Desconto total de <b>&nbsp;${fmtPct(pct)}&nbsp;</b>${precisa ? `— acima do limite de ${fmtPct(limiteDesc)}: a venda vai para aprovação do gerente.` : ''}`;
     } else av.hidden = true;
+    const cr = $('#creditos', el);
+    cr.innerHTML = [
+      carrinho.orcamento ? `<div class="pdv-linha"><span class="muted pequeno">Orçamento nº ${carrinho.orcamento.numero}</span><span></span></div>` : '',
+      carrinho.reserva ? `<div class="pdv-linha"><span>Sinal da reserva nº ${carrinho.reserva.numero}</span><b class="pos">− ${fmtMoeda(carrinho.reserva.valor)}</b></div>` : '',
+      ...carrinho.trocas.map((t, k) => `<div class="pdv-linha"><span>Na troca: ${esc(t.produto_nome)}<div class="muted pequeno">IMEI ${esc(t.imei)}${t.grau ? ` · grau ${t.grau}` : ''}</div></span>
+        <span style="white-space:nowrap"><b class="pos">− ${fmtMoeda(t.valor_centavos)}</b> <button class="link-btn perigo" type="button" data-trem="${k}" aria-label="Remover troca">✕</button></span></div>`),
+      creditos() ? `<div class="pdv-linha"><span class="forte">A pagar</span><b>${fmtMoeda(aPagar())}</b></div>` : '',
+    ].join('');
+    $$('[data-trem]', cr).forEach((b) => b.addEventListener('click', () => { carrinho.trocas.splice(Number(b.dataset.trem), 1); ajustarPagamentoUnico(); resumo(); }));
     desenharPagamentos();
   }
 
   function ajustarPagamentoUnico() {
-    if (carrinho.pagamentos.length === 1 && !carrinho.pagamentos[0].editado) carrinho.pagamentos[0].valor = total();
+    if (carrinho.pagamentos.length === 1 && !carrinho.pagamentos[0].editado) carrinho.pagamentos[0].valor = aPagar();
   }
 
   function desenharPagamentos() {
-    if (!carrinho.pagamentos.length) carrinho.pagamentos.push({ forma: formasAtivas[0]?.forma || 'dinheiro', valor: total(), parcelas: 1 });
+    if (!carrinho.pagamentos.length) carrinho.pagamentos.push({ forma: formasAtivas[0]?.forma || 'dinheiro', valor: aPagar(), parcelas: 1 });
     const box = $('#pags', el);
     box.innerHTML = carrinho.pagamentos.map((p, k) => `<div class="pag-linha">
       <select data-pk="${k}" data-campo="forma">${formasAtivas.map((f) => `<option value="${f.forma}" ${f.forma === p.forma ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select>
@@ -140,7 +155,7 @@ export async function nova(el, ctx) {
       resumo();
     }));
     $$('[data-prem]', box).forEach((b) => b.addEventListener('click', () => { carrinho.pagamentos.splice(Number(b.dataset.prem), 1); resumo(); }));
-    const falta = total() - pagos();
+    const falta = aPagar() - pagos();
     const dinheiro = carrinho.pagamentos.find((p) => p.forma === 'dinheiro');
     if (falta < 0 && dinheiro && -falta <= dinheiro.valor) {
       $('#r-falta-rot', el).textContent = 'Troco'; $('#r-falta', el).textContent = fmtMoeda(-falta); $('#r-falta', el).className = 'pos';
@@ -230,6 +245,54 @@ export async function nova(el, ctx) {
     if (r) { carrinho.itens.push(r); ajustarPagamentoUnico(); desenhar(); }
   });
 
+  // ---- aparelho do cliente na troca ----
+  $('#btn-troca', el)?.addEventListener('click', async () => {
+    const { avaliarAparelho } = await import('./orcamentos.js');
+    const t = await avaliarAparelho('troca', carrinho.trocas.map((x) => x.imei));
+    if (t) { carrinho.trocas.push(t); ajustarPagamentoUnico(); resumo(); }
+  });
+  // ---- salvar como orçamento ----
+  $('#btn-orc', el)?.addEventListener('click', async () => {
+    if (!carrinho.itens.length) { toast('Adicione itens antes de salvar o orçamento.', 'erro'); return; }
+    const { salvarOrcamentoDoCarrinho } = await import('./orcamentos.js');
+    const r = await salvarOrcamentoDoCarrinho(carrinho);
+    if (r) { novoCarrinho(); location.hash = `#/vendas/orcamentos/${r.id}`; }
+  });
+  // orçamento ou reserva trazidos de outra tela
+  if (estado.preOrcamento || estado.preReserva) {
+    const orc = estado.preOrcamento; const res = estado.preReserva; estado.preOrcamento = null; estado.preReserva = null;
+    (async () => {
+      try {
+        if (orc) {
+          carrinho.orcamento = { id: orc.id, numero: orc.numero }; carrinho.descontoGeral = orc.desconto_centavos || 0; carrinho.observacao = orc.observacao || '';
+          if (orc.cliente_id) carrinho.cliente = { id: orc.cliente_id, nome: orc.nome_cliente };
+          const ids = orc.itens.filter((i) => i.produto_id).map((i) => i.produto_id);
+          const prods = ids.length ? await consulta(estado.sb.from('produtos').select('id,preco_venda_centavos,sku,categoria,estoque_atual,controla_estoque').in('id', ids)) : [];
+          const series = orc.itens.filter((i) => i.serie_id).map((i) => i.serie_id);
+          const aps = series.length ? await consulta(estado.sb.from('aparelhos').select('id,status,preco_venda_centavos,condicao,grau,bateria_pct,cor,capacidade').in('id', series)) : [];
+          const avisos = [];
+          orc.itens.forEach((i) => {
+            const pr = prods.find((x) => x.id === i.produto_id); const ap = aps.find((x) => x.id === i.serie_id);
+            if (i.serie_id && (!ap || ap.status !== 'disponivel')) { avisos.push(`${i.descricao} (IMEI ${i.serie}) não está mais disponível`); return; }
+            carrinho.itens.push({ produtoId: i.produto_id || null, serieId: i.serie_id || null, serie: i.serie || null, descricao: i.descricao, categoriaId: i.categoria_id || null,
+              sku: pr?.sku, categoria: pr?.categoria, qtd: Number(i.quantidade), preco: i.preco_unitario_centavos,
+              precoTabela: ap?.preco_venda_centavos ?? pr?.preco_venda_centavos ?? i.preco_unitario_centavos, estoque: pr ? Number(pr.estoque_atual) : undefined,
+              controlaEstoque: pr?.controla_estoque, detalhes: ap || i.detalhes || null, garantia: i.garantia_dias ?? null });
+          });
+          if (avisos.length) toast(avisos.join(' · '), 'erro');
+        }
+        if (res) {
+          carrinho.reserva = { id: res.id, numero: res.numero, valor: res.valor_sinal_centavos, serieId: res.serie_id };
+          carrinho.cliente = { id: res.cliente_id, nome: res.cliente_nome };
+          const [a] = await consulta(estado.sb.from('aparelhos').select('id,produto_id,produto,imei,sku,categoria,preco_venda_centavos,condicao,grau,bateria_pct,cor,capacidade').eq('id', res.serie_id));
+          if (a) carrinho.itens.push({ produtoId: a.produto_id, serieId: a.id, serie: a.imei, descricao: a.produto, sku: a.sku, categoria: a.categoria, qtd: 1,
+            preco: a.preco_venda_centavos, precoTabela: a.preco_venda_centavos, controlaEstoque: true, detalhes: a });
+        }
+        carrinho.pagamentos = []; desenhar();
+      } catch (err) { toast(msgErro(err), 'erro'); }
+    })();
+  }
+
   // ---- cliente ----
   // aparelho escolhido na ficha (botão "Vender este aparelho")
   if (estado.preAparelho) {
@@ -250,7 +313,7 @@ export async function nova(el, ctx) {
   // ---- desconto ----
   $('#desc-geral', el).addEventListener('change', (e) => { carrinho.descontoGeral = Math.min(subtotal(), valorDinheiro(e.target)); $('#desc-pct', el).value = ''; ajustarPagamentoUnico(); resumo(); });
   $('#desc-pct', el).addEventListener('change', (e) => { const p = Math.min(100, lerNumero(e.target.value)); carrinho.descontoGeral = Math.round(subtotal() * p / 100); ajustarPagamentoUnico(); resumo(); });
-  $('#btn-pag', el).addEventListener('click', () => { const falta = Math.max(0, total() - pagos()); carrinho.pagamentos.push({ forma: 'pix', valor: falta, parcelas: 1, editado: true }); resumo(); });
+  $('#btn-pag', el).addEventListener('click', () => { const falta = Math.max(0, aPagar() - pagos()); carrinho.pagamentos.push({ forma: 'pix', valor: falta, parcelas: 1, editado: true }); resumo(); });
   $('#obs', el).addEventListener('input', (e) => { carrinho.observacao = e.target.value; });
   $('#btn-limpar', el).addEventListener('click', () => { novoCarrinho(); nova(el, ctx); });
 
@@ -261,8 +324,10 @@ export async function nova(el, ctx) {
     if (!carrinho.cliente && carrinho.itens.some((i) => i.serieId)) {
       erroEl.textContent = 'Venda de aparelho (com IMEI) precisa de cliente: clique em “Escolher” no campo Cliente.'; erroEl.hidden = false; return;
     }
+    if (carrinho.trocas.length && !carrinho.cliente) { erroEl.textContent = 'Aparelho na troca precisa de cliente: clique em “Escolher” no campo Cliente.'; erroEl.hidden = false; return; }
+    if (creditos() > total()) { erroEl.textContent = 'A troca/sinal passa do total da compra.'; erroEl.hidden = false; return; }
     let pags = carrinho.pagamentos.filter((p) => p.valor > 0).map((p) => ({ ...p }));
-    let falta = total() - pags.reduce((s, p) => s + p.valor, 0);
+    let falta = aPagar() - pags.reduce((s, p) => s + p.valor, 0);
     const din = pags.find((p) => p.forma === 'dinheiro');
     if (falta < 0 && din && -falta <= din.valor) { din.valor += falta; falta = 0; pags = pags.filter((p) => p.valor > 0); }
     if (falta !== 0) { erroEl.textContent = falta > 0 ? `Faltam ${fmtMoeda(falta)} no pagamento.` : `Os pagamentos passaram ${fmtMoeda(-falta)} do total.`; erroEl.hidden = false; return; }
@@ -273,8 +338,9 @@ export async function nova(el, ctx) {
         itens: carrinho.itens.map((i) => ({ produto_id: i.produtoId || null, serie_id: i.serieId || null, descricao: i.descricao, categoria_id: i.categoriaId || null,
           quantidade: i.qtd, preco_unitario_centavos: i.preco, garantia_dias: i.garantia ?? null })),
         pagamentos: pags.map((p) => ({ forma: p.forma, valor_centavos: p.valor, parcelas: p.parcelas || 1, primeiro_vencimento: ['crediario', 'boleto'].includes(p.forma) ? (p.venc || somarDias(hojeSP(), 30)) : null })),
+        trocas: carrinho.trocas.map(({ produto_nome, ...t }) => t), reserva_id: carrinho.reserva?.id || null, orcamento_id: carrinho.orcamento?.id || null,
       } });
-      const troco = -(total() - carrinho.pagamentos.reduce((s, p) => s + p.valor, 0));
+      const troco = -(aPagar() - carrinho.pagamentos.reduce((s, p) => s + p.valor, 0));
       novoCarrinho();
       atualizarAvisos();
       await posVenda(r, troco > 0 ? troco : 0);
@@ -314,10 +380,11 @@ async function posVenda(r, troco) {
       ${troco ? `<p style="font-size:18px;margin:8px 0">Troco: <b class="pos">${fmtMoeda(troco)}</b></p>` : ''}</div>
       <div style="display:grid;gap:8px">
         <button class="btn btn-ghost" type="button" data-acao="recibo">${icone('impressora')} Imprimir recibo</button>
+        ${temGarantia(v.itens) ? `<button class="btn btn-ghost" type="button" data-acao="garantia">${icone('impressora')} Termo de garantia</button>` : ''}
         ${v.venda.cliente_telefone ? `<a class="btn btn-ghost" target="_blank" rel="noopener" href="${linkZap(v.venda.cliente_telefone, textoWhats(v))}">${icone('zap')} Enviar recibo no WhatsApp</a>` : ''}
         <a class="btn btn-ghost" href="#/vendas/${r.id}" data-fechar>Ver a venda</a>
       </div>`,
-    aoAbrir: (f) => { $('[data-acao=recibo]', f).addEventListener('click', () => imprimirRecibo(v)); $('a[href^="#/vendas/"]', f).addEventListener('click', () => f.fechar('ver')); },
+    aoAbrir: (f) => { $('[data-acao=recibo]', f).addEventListener('click', () => imprimirRecibo(v)); $('[data-acao=garantia]', f)?.addEventListener('click', () => imprimirTermoGarantia(v)); $('a[href^="#/vendas/"]', f).addEventListener('click', () => f.fechar('ver')); },
   });
   return acao;
 }
@@ -365,6 +432,30 @@ export function imprimirRecibo({ venda, itens, pags }) {
     ${venda.observacao ? `<p>Obs.: ${esc(venda.observacao)}</p>` : ''}
     ${e.texto_recibo ? `<p class="muted">${esc(e.texto_recibo)}</p>` : ''}
     <div class="assin"><div>${esc(e.nome_fantasia || '')}</div><div>Cliente</div></div>`);
+}
+
+// Termo de garantia: um por venda, com os aparelhos (IMEI, estado) e o prazo de cada item
+const temGarantia = (itens) => itens.some((i) => i.garantia_dias > 0 && i.devolvido_qtd < i.quantidade);
+export function imprimirTermoGarantia({ venda, itens }) {
+  const e = estado.empresa || {};
+  const its = itens.filter((i) => i.garantia_dias > 0 && i.devolvido_qtd < i.quantidade);
+  imprimir(`Termo de garantia ${venda.numero}`, `
+    <h2>Termo de garantia — venda nº ${venda.numero}</h2>
+    <p>Data da compra: <b>${fmtData(venda.data)}</b><br>Cliente: <b>${esc(venda.cliente_nome || 'Consumidor')}</b>${venda.cliente_telefone ? ` · ${fmtTelefone(venda.cliente_telefone)}` : ''}</p>
+    <table><thead><tr><th>Produto</th><th>Prazo</th><th>Válida até</th></tr></thead><tbody>
+      ${its.map((i) => `<tr><td><b>${esc(i.descricao)}</b>${i.serie ? `<br><small>IMEI/Série: ${esc(i.serie)}${i.detalhes ? '<br>' + esc(textoAparelho(i.detalhes)) : ''}</small>` : ''}</td>
+        <td>${i.garantia_dias} dias</td><td><b>${fmtData(somarDias(venda.data, i.garantia_dias))}</b></td></tr>`).join('')}
+    </tbody></table>
+    <h2>Condições</h2>
+    <div class="caixa" style="text-align:justify">${esc(e.texto_garantia || 'A garantia cobre defeitos de funcionamento. Não cobre quebra, queda, contato com líquido, mau uso, violação do aparelho por terceiros ou desgaste natural. Apresente este termo e o aparelho para atendimento.')}</div>
+    <p class="muted">Guarde este termo. A garantia legal do Código de Defesa do Consumidor (90 dias para produtos duráveis) está incluída nos prazos acima.</p>
+    <div class="assin"><div>${esc(e.nome_fantasia || '')}</div><div>Cliente</div></div>`);
+}
+function textoWhatsGarantia({ venda, itens }) {
+  const its = itens.filter((i) => i.garantia_dias > 0 && i.devolvido_qtd < i.quantidade);
+  return [`*${estado.empresa?.nome_fantasia || ''}* — Garantia da sua compra (venda nº ${venda.numero})`, '',
+    ...its.map((i) => `• ${i.descricao}${i.serie ? ` (IMEI ${i.serie})` : ''}: garantia de ${i.garantia_dias} dias, até *${fmtData(somarDias(venda.data, i.garantia_dias))}*`),
+    '', estado.empresa?.texto_garantia || 'Qualquer problema, fale com a gente por aqui.'].join('\n');
 }
 
 // =====================================================================
@@ -482,7 +573,11 @@ export async function aprovacoes(el, ctx) {
 export async function detalhe(el, ctx) {
   const id = ctx.params[0];
   const d = await carregarVenda(id);
-  const titulos = pode('financeiro.ver') ? await consulta(estado.sb.from('titulos').select('*').eq('venda_id', id).order('vencimento')) : null;
+  const [titulos, trocas, reservasV] = await Promise.all([
+    pode('financeiro.ver') ? consulta(estado.sb.from('titulos').select('*').eq('venda_id', id).order('vencimento')) : null,
+    consulta(estado.sb.from('avaliacoes_lista').select('id,numero,produto,imei,valor_centavos,status').eq('venda_id', id)).catch(() => []),
+    consulta(estado.sb.from('reservas_lista').select('id,numero,valor_sinal_centavos').eq('venda_id', id)).catch(() => []),
+  ]);
   if (!ctx.ativo()) return;
   const { venda: v, itens, pags, devs } = d;
   if (!v) { el.innerHTML = vazio('Venda não encontrada', '<a href="#/vendas">Voltar</a>'); return; }
@@ -499,6 +594,8 @@ export async function detalhe(el, ctx) {
     <div class="barra-acoes">
       ${v.status !== 'cancelada' ? `<button class="btn btn-ghost" id="b-recibo" type="button">${icone('impressora')} Recibo</button>` : ''}
       ${v.cliente_telefone && v.status !== 'cancelada' ? `<a class="btn btn-ghost" target="_blank" rel="noopener" href="${linkZap(v.cliente_telefone, textoWhats(d))}">${icone('zap')} WhatsApp</a>` : ''}
+      ${v.status !== 'cancelada' && temGarantia(itens) ? `<button class="btn btn-ghost" id="b-garantia" type="button">${icone('impressora')} Termo de garantia</button>` : ''}
+      ${v.status !== 'cancelada' && temGarantia(itens) && v.cliente_telefone ? `<a class="btn btn-ghost" target="_blank" rel="noopener" href="${linkZap(v.cliente_telefone, textoWhatsGarantia(d))}">${icone('zap')} Garantia no WhatsApp</a>` : ''}
       ${!v.cliente_id && v.status !== 'cancelada' && (pode('vendas.ver_todas') || v.criado_por === estado.perfil.user_id) ? '<button class="btn btn-ghost" id="b-cli" type="button">Vincular cliente</button>' : ''}
       ${v.status === 'aguardando_aprovacao' && pode('vendas.aprovar') ? '<button class="btn btn-ok" id="b-aprovar" type="button">Aprovar desconto</button>' : ''}
       ${v.status === 'concluida' && pode('vendas.devolver') ? '<button class="btn btn-ghost" id="b-dev" type="button">Devolução / troca</button>' : ''}
@@ -515,6 +612,8 @@ export async function detalhe(el, ctx) {
           ${v.devolvido_centavos ? `<div><dt>Devolvido</dt><dd class="neg">− ${fmtMoeda(v.devolvido_centavos)}</dd></div>` : ''}
           ${lucro && v.custo_centavos !== null && v.status !== 'cancelada' ? `<div><dt>Custo / lucro bruto</dt><dd>${fmtMoeda(v.custo_centavos)} / <b>${fmtMoeda(v.total_centavos - v.devolvido_centavos - v.custo_centavos)}</b></dd></div>` : ''}
           <div><dt>Pagamento</dt><dd>${pags.map((p) => `${FORMAS[p.forma]}${p.parcelas > 1 ? ` ${p.parcelas}x` : ''}: ${fmtMoeda(p.valor_centavos)}${p.taxa_centavos ? ` <span class="muted pequeno">(taxa ${fmtMoeda(p.taxa_centavos)})</span>` : ''}`).join('<br>')}</dd></div>
+          ${reservasV.map((r) => `<div><dt>Reserva</dt><dd><a href="#/vendas/reservas/${r.id}">nº ${r.numero}</a> · sinal ${fmtMoeda(r.valor_sinal_centavos)}</dd></div>`).join('')}
+          ${trocas.map((t) => `<div><dt>Aparelho na troca</dt><dd><a href="#/aparelhos/compras/${t.id}">${esc(t.produto)}</a> · ${fmtMoeda(t.valor_centavos)}<br><span class="muted pequeno">IMEI ${esc(t.imei)}${t.status === 'cancelada' ? ' · troca desfeita' : ''}</span></dd></div>`).join('')}
           ${v.observacao ? `<div><dt>Observação</dt><dd>${esc(v.observacao)}</dd></div>` : ''}
         </dl>
       </div>
@@ -535,6 +634,7 @@ export async function detalhe(el, ctx) {
     </div>`;
 
   $('#b-recibo', el)?.addEventListener('click', () => imprimirRecibo(d));
+  $('#b-garantia', el)?.addEventListener('click', () => imprimirTermoGarantia(d));
   $('#b-cli', el)?.addEventListener('click', async () => {
     const { escolherCliente } = await import('./clientes.js');
     const c = await escolherCliente(); if (!c) return;
@@ -544,7 +644,7 @@ export async function detalhe(el, ctx) {
     try { await rpc('aprovar_venda', { p_venda: id, p_aprovar: true }); toast('Venda aprovada'); atualizarAvisos(); detalhe(el, ctx); } catch (err) { toast(msgErro(err), 'erro'); }
   });
   $('#b-cancelar', el)?.addEventListener('click', async () => {
-    const m = await pedirMotivo({ titulo: `Cancelar venda nº ${v.numero}`, texto: 'O estoque volta, o IMEI fica disponível e o dinheiro recebido é estornado das contas.', botao: 'Cancelar venda' });
+    const m = await pedirMotivo({ titulo: `Cancelar venda nº ${v.numero}`, texto: 'O estoque volta, o IMEI fica disponível e o dinheiro recebido é estornado das contas. Aparelho recebido na troca é devolvido ao cliente e a reserva (se houver) volta a ficar ativa.', botao: 'Cancelar venda' });
     if (!m) return;
     try { await rpc('cancelar_venda', { p_venda: id, p_motivo: m }); toast('Venda cancelada'); detalhe(el, ctx); } catch (err) { toast(msgErro(err), 'erro'); }
   });

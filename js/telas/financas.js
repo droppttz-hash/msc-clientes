@@ -258,7 +258,7 @@ export async function novoTitulo(tipo = 'pagar') {
       ${rec ? `<label>Cliente<div class="linha"><input name="cliente_nome" readonly placeholder="(opcional)"><button class="btn btn-ghost btn-sm estreito" type="button" data-cli style="flex:0 0 auto">Escolher</button></div></label>`
     : `<label>Fornecedor<select name="fornecedor_id"><option value="">(nenhum)</option>${opcoes(forns.filter((x) => x.ativo !== false), '', null)}</select></label>`}
       <label>Valor total *<input name="valor" data-mascara="dinheiro" inputmode="numeric"></label>
-      <label>Forma de pagamento<select name="forma"><option value="">—</option>${formas.filter((x) => x.ativo).map((x) => `<option value="${x.forma}">${esc(x.nome)}</option>`).join('')}</select></label>
+      <label>Forma de pagamento<select name="forma"><option value="">—</option>${formas.filter((x) => x.ativo && !x.interna).map((x) => `<option value="${x.forma}">${esc(x.nome)}</option>`).join('')}</select></label>
       <label>Primeiro vencimento *<input name="venc" type="date" value="${hojeSP()}"></label>
       <label>Parcelas<select name="nparc">${Array.from({ length: 24 }, (_, i) => `<option value="${i + 1}">${i + 1}x${i ? ' (mensal)' : ''}</option>`).join('')}</select></label>
       <label>Competência <span class="dica-campo muted">(mês a que a despesa se refere — usado no DRE)</span><input name="competencia" type="month" value="${hojeSP().slice(0, 7)}"></label>
@@ -426,7 +426,7 @@ async function editarTitulo(t) {
       <label>Valor *<input name="valor" data-mascara="dinheiro" inputmode="numeric" value="${fmtMoeda(t.valor_centavos)}"></label>
       <label>Vencimento *<input name="venc" type="date" value="${t.vencimento}"></label>
       <label>Competência<input name="competencia" type="month" value="${t.competencia.slice(0, 7)}"></label>
-      <label>Forma<select name="forma"><option value="">—</option>${formas.map((x) => `<option value="${x.forma}" ${x.forma === t.forma_pagamento ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select></label>
+      <label>Forma<select name="forma"><option value="">—</option>${formas.filter((x) => !x.interna || x.forma === t.forma_pagamento).map((x) => `<option value="${x.forma}" ${x.forma === t.forma_pagamento ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select></label>
       <label class="col-2">Observação<textarea name="obs" rows="2">${esc(t.observacao)}</textarea></label></div>`,
     aoSalvar: async (f) => {
       if (!valorDinheiro(f.valor)) { f.erro('Informe o valor.'); return false; }

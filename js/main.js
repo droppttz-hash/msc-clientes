@@ -14,6 +14,8 @@ const MENU = [
   { id: 'vendas', rotulo: 'Vendas', icone: 'vendas', perm: ['vendas.criar', 'vendas.ver_todas'], filhos: [
     { rotulo: 'Nova venda', href: '#/vendas/nova', perm: ['vendas.criar'] },
     { rotulo: 'Vendas', href: '#/vendas', perm: ['vendas.criar', 'vendas.ver_todas'] },
+    { rotulo: 'Orçamentos', href: '#/vendas/orcamentos', perm: ['vendas.orcamento', 'vendas.ver_todas'] },
+    { rotulo: 'Reservas', href: '#/vendas/reservas', perm: ['vendas.reservar', 'vendas.ver_todas'] },
     { rotulo: 'Aprovações', href: '#/vendas/aprovacoes', perm: ['vendas.aprovar'], badge: 'aguardando_aprovacao' },
   ] },
   { id: 'clientes', rotulo: 'Clientes', icone: 'clientes', perm: ['clientes.ver'], filhos: [
@@ -23,6 +25,7 @@ const MENU = [
   { id: 'aparelhos', rotulo: 'Aparelhos', icone: 'aparelho', perm: ['estoque.ver'], filhos: [
     { rotulo: 'Em estoque', href: '#/aparelhos' },
     { rotulo: 'Vendidos e lucro', href: '#/aparelhos/vendidos', perm: ['vendas.ver_lucro'] },
+    { rotulo: 'Compras e trocas', href: '#/aparelhos/compras' },
   ] },
   { id: 'estoque', rotulo: 'Estoque', icone: 'estoque', perm: ['estoque.ver'], filhos: [
     { rotulo: 'Produtos', href: '#/estoque' },
@@ -61,9 +64,15 @@ const ROTAS = [
   [/^#\/vendas\/nova$/, 'vendas', 'nova'],
   [/^#\/vendas$/, 'vendas', 'lista'],
   [/^#\/vendas\/aprovacoes$/, 'vendas', 'aprovacoes'],
+  [/^#\/vendas\/orcamentos$/, 'orcamentos', 'orcamentos'],
+  [/^#\/vendas\/orcamentos\/([0-9a-f-]{36})$/, 'orcamentos', 'orcamento'],
+  [/^#\/vendas\/reservas$/, 'orcamentos', 'reservas'],
+  [/^#\/vendas\/reservas\/([0-9a-f-]{36})$/, 'orcamentos', 'reserva'],
   [/^#\/vendas\/([0-9a-f-]{36})$/, 'vendas', 'detalhe'],
   [/^#\/aparelhos$/, 'aparelhos', 'lista'],
   [/^#\/aparelhos\/vendidos$/, 'aparelhos', 'vendidos'],
+  [/^#\/aparelhos\/compras$/, 'compras', 'lista'],
+  [/^#\/aparelhos\/compras\/([0-9a-f-]{36})$/, 'compras', 'detalhe'],
   [/^#\/aparelhos\/([0-9a-f-]{36})$/, 'aparelhos', 'ficha'],
   [/^#\/estoque$/, 'estoque', 'produtos'],
   [/^#\/estoque\/produto\/([0-9a-f-]{36})$/, 'estoque', 'produto'],
@@ -90,6 +99,8 @@ const MODULOS = {
   vendas: () => import('./telas/vendas.js'),
   estoque: () => import('./telas/estoque.js'),
   aparelhos: () => import('./telas/aparelhos.js'),
+  orcamentos: () => import('./telas/orcamentos.js'),
+  compras: () => import('./telas/compras.js'),
   financas: () => import('./telas/financas.js'),
   config: () => import('./telas/config.js'),
 };
@@ -206,6 +217,8 @@ $('#fundo-menu').addEventListener('click', fecharMenuMobile);
 // ---------------------------------------------------------------------
 const NOVOS = [
   { rotulo: 'Nova venda', perm: 'vendas.criar', href: '#/vendas/nova' },
+  { rotulo: 'Reservar aparelho', perm: 'vendas.reservar', acao: async () => { const r = await (await import('./telas/orcamentos.js')).novaReserva(); if (r) location.hash = `#/vendas/reservas/${r.id}`; } },
+  { rotulo: 'Comprar aparelho de cliente', perm: 'aparelhos.comprar', acao: async () => { const r = await (await import('./telas/compras.js')).comprarAparelho(); if (r) location.hash = `#/aparelhos/compras/${r.id}`; } },
   { rotulo: 'Novo cliente', perm: 'clientes.criar', acao: async () => (await import('./telas/clientes.js')).novoCliente() },
   { rotulo: 'Novo produto', perm: 'estoque.produtos', acao: async () => (await import('./telas/estoque.js')).novoProduto() },
   { rotulo: 'Entrada de mercadoria', perm: 'estoque.entrada', href: '#/estoque/entradas/nova' },
