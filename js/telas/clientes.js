@@ -99,6 +99,11 @@ async function exportar() {
   } catch (err) { toast(msgErro(err), 'erro'); }
 }
 
+const OS_ST = { aberta: ['Aberta', 'warn'], diagnostico: ['Em diagnóstico', 'warn'], aguardando_aprovacao: ['Aguardando aprovação', 'warn'], aprovada: ['Aprovada', 'warn'],
+  em_execucao: ['Em execução', 'warn'], aguardando_peca: ['Aguardando peça', 'warn'], pronta: ['Pronta', 'ok'], entregue: ['Entregue', 'cinza'], reprovada: ['Recusada', 'danger'],
+  cancelada: ['Cancelada', 'cinza'], abandonada: ['Abandonada', 'danger'] };
+const tagOs = (s) => tag(...(OS_ST[s] || [s, 'cinza']));
+
 // ---------------------------------------------------------------------
 // FICHA
 // ---------------------------------------------------------------------
@@ -111,9 +116,10 @@ export async function ficha(el, ctx) {
       pode('vendas.reservar') || pode('vendas.ver_todas') ? consulta(estado.sb.from('reservas_lista').select('id,numero,produto,imei,status,validade,vencida,valor_sinal_centavos').eq('cliente_id', id).order('criado_em', { ascending: false })).catch(() => []) : [],
       pode('vendas.orcamento') || pode('vendas.ver_todas') ? consulta(estado.sb.from('orcamentos_lista').select('id,numero,total_centavos,status,validade,vencido,criado_em').eq('cliente_id', id).order('criado_em', { ascending: false })).catch(() => []) : [],
       consulta(estado.sb.from('avaliacoes_lista').select('id,numero,tipo,produto,imei,valor_centavos,status,criado_em').eq('cliente_id', id).order('criado_em', { ascending: false })).catch(() => []),
+      pode('os.ver') ? consulta(estado.sb.from('os_lista').select('id,numero,aparelho,status,total_centavos,criado_em,garantia_ate').eq('cliente_id', id).order('criado_em', { ascending: false })).catch(() => []) : [],
     ]),
   ]);
-  const [reservas, orcs, avals] = extras;
+  const [reservas, orcs, avals, oss] = extras;
   if (!ctx.ativo()) return;
   if (!cli) { el.innerHTML = vazio('Cliente não encontrado', '<a href="#/clientes">Voltar</a>'); return; }
   const endereco = [[cli.logradouro, cli.numero].filter(Boolean).join(', '), cli.complemento, cli.bairro,
@@ -160,6 +166,11 @@ export async function ficha(el, ctx) {
               <td class="num">${v.status !== 'concluida' ? tag(STATUS[v.status][0], STATUS[v.status][1]) : ''}</td></tr>`).join('')}</tbody>
           </table></div>` : vazio('Nenhuma compra ainda', '')}
         </div>
+        ${oss.length || (pode('os.criar') && cli.ativo) ? `<div class="card" style="margin-top:16px"><div class="card-topo"><h3>Assistência técnica</h3>
+          ${pode('os.criar') && cli.ativo ? '<button class="btn btn-ghost btn-sm" id="btn-os" type="button">+ Nova OS</button>' : ''}</div>
+          ${oss.length ? `<div class="tabela-wrap"><table class="tabela"><tbody>
+          ${oss.map((o) => `<tr class="clicavel" data-href="#/os/${o.id}"><td>OS nº ${o.numero} · ${fmtData(o.criado_em)}<div class="muted pequeno">${esc(o.aparelho)}${o.garantia_ate ? ` · garantia até ${fmtData(o.garantia_ate)}` : ''}</div></td>
+            <td class="num">${o.total_centavos ? fmtMoeda(o.total_centavos) : ''}</td><td class="num">${tagOs(o.status)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted card-pad">Nenhuma OS.</p>'}</div>` : ''}
         ${reservas.length ? `<div class="card" style="margin-top:16px"><div class="card-topo"><h3>Reservas</h3></div><div class="tabela-wrap"><table class="tabela"><tbody>
           ${reservas.map((r) => `<tr class="clicavel" data-href="#/vendas/reservas/${r.id}"><td>nº ${r.numero} · ${esc(r.produto)}<div class="muted pequeno">IMEI ${esc(r.imei)}</div></td><td class="num">sinal ${fmtMoeda(r.valor_sinal_centavos)}</td>
             <td class="num">${r.status === 'ativa' ? (r.vencida ? tag('Vencida', 'danger') : tag(`até ${fmtData(r.validade)}`, 'warn')) : tag(r.status === 'convertida' ? 'Virou venda' : 'Cancelada', 'cinza')}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
@@ -173,6 +184,7 @@ export async function ficha(el, ctx) {
     </div>`;
 
   $('#btn-editar', el)?.addEventListener('click', async () => { if (await formCliente(cli)) ficha(el, ctx); });
+  $('#btn-os', el)?.addEventListener('click', () => { estado.preClienteOs = { id: cli.id, nome: cli.nome }; location.hash = '#/os/nova'; });
   $('#btn-ativo', el)?.addEventListener('click', async () => {
     const { error } = await estado.sb.from('clientes').update({ ativo: !cli.ativo }).eq('id', cli.id);
     if (error) return toast(msgErro(error), 'erro');

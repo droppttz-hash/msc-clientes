@@ -18,6 +18,10 @@ const MENU = [
     { rotulo: 'Reservas', href: '#/vendas/reservas', perm: ['vendas.reservar', 'vendas.ver_todas'] },
     { rotulo: 'Aprovações', href: '#/vendas/aprovacoes', perm: ['vendas.aprovar'], badge: 'aguardando_aprovacao' },
   ] },
+  { id: 'os', rotulo: 'Assistência', icone: 'ferramenta', perm: ['os.ver'], filhos: [
+    { rotulo: 'Ordens de serviço', href: '#/os' },
+    { rotulo: 'Nova OS', href: '#/os/nova', perm: ['os.criar'] },
+  ] },
   { id: 'clientes', rotulo: 'Clientes', icone: 'clientes', perm: ['clientes.ver'], filhos: [
     { rotulo: 'Clientes', href: '#/clientes' },
     { rotulo: 'Aniversariantes', href: '#/clientes/aniversariantes' },
@@ -69,6 +73,9 @@ const ROTAS = [
   [/^#\/vendas\/reservas$/, 'orcamentos', 'reservas'],
   [/^#\/vendas\/reservas\/([0-9a-f-]{36})$/, 'orcamentos', 'reserva'],
   [/^#\/vendas\/([0-9a-f-]{36})$/, 'vendas', 'detalhe'],
+  [/^#\/os$/, 'os', 'lista'],
+  [/^#\/os\/nova$/, 'os', 'nova'],
+  [/^#\/os\/([0-9a-f-]{36})$/, 'os', 'detalhe'],
   [/^#\/aparelhos$/, 'aparelhos', 'lista'],
   [/^#\/aparelhos\/vendidos$/, 'aparelhos', 'vendidos'],
   [/^#\/aparelhos\/compras$/, 'compras', 'lista'],
@@ -101,6 +108,7 @@ const MODULOS = {
   aparelhos: () => import('./telas/aparelhos.js'),
   orcamentos: () => import('./telas/orcamentos.js'),
   compras: () => import('./telas/compras.js'),
+  os: () => import('./telas/os.js'),
   financas: () => import('./telas/financas.js'),
   config: () => import('./telas/config.js'),
 };
@@ -217,6 +225,7 @@ $('#fundo-menu').addEventListener('click', fecharMenuMobile);
 // ---------------------------------------------------------------------
 const NOVOS = [
   { rotulo: 'Nova venda', perm: 'vendas.criar', href: '#/vendas/nova' },
+  { rotulo: 'Nova OS (assistência)', perm: 'os.criar', href: '#/os/nova' },
   { rotulo: 'Reservar aparelho', perm: 'vendas.reservar', acao: async () => { const r = await (await import('./telas/orcamentos.js')).novaReserva(); if (r) location.hash = `#/vendas/reservas/${r.id}`; } },
   { rotulo: 'Comprar aparelho de cliente', perm: 'aparelhos.comprar', acao: async () => { const r = await (await import('./telas/compras.js')).comprarAparelho(); if (r) location.hash = `#/aparelhos/compras/${r.id}`; } },
   { rotulo: 'Novo cliente', perm: 'clientes.criar', acao: async () => (await import('./telas/clientes.js')).novoCliente() },
@@ -305,8 +314,8 @@ $('#busca-input').addEventListener('input', (e) => {
     let r = [];
     try { r = await rpc('busca_geral', { p_termo: termo }); } catch (err) { $('#busca-resultados').innerHTML = `<p class="erro">${esc(msgErro(err))}</p>`; return; }
     if (termo !== $('#busca-input').value) return;
-    const rot = { cliente: 'Cliente', produto: 'Produto', serie: 'IMEI', aparelho: 'Aparelho', venda: 'Venda' };
-    const link = (x) => ({ cliente: `#/clientes/${x.id}`, produto: `#/estoque/produto/${x.id}`, serie: `#/estoque/produto/${x.id}`, aparelho: `#/aparelhos/${x.id}`, venda: `#/vendas/${x.id}` }[x.tipo]);
+    const rot = { cliente: 'Cliente', produto: 'Produto', serie: 'IMEI', aparelho: 'Aparelho', venda: 'Venda', os: 'OS' };
+    const link = (x) => ({ cliente: `#/clientes/${x.id}`, produto: `#/estoque/produto/${x.id}`, serie: `#/estoque/produto/${x.id}`, aparelho: `#/aparelhos/${x.id}`, venda: `#/vendas/${x.id}`, os: `#/os/${x.id}` }[x.tipo]);
     selBusca = r.length ? 0 : -1;
     $('#busca-resultados').innerHTML = r.length ? r.map((x, i) => `<a href="${link(x)}" class="${i === 0 ? 'sel' : ''}">${'<span class="tag cinza">' + rot[x.tipo] + '</span>'}<span><b>${esc(x.titulo)}</b><small>${esc(x.sub || '')}</small></span></a>`).join('')
       : (termo.trim().length < 2 ? '' : '<p class="muted aviso" style="padding:10px 12px">Nada encontrado.</p>');
@@ -330,8 +339,10 @@ function montarBarraInferior() {
   const itens = [
     { href: '#/inicio', rot: 'Início', ico: 'inicio' },
     pode('clientes.ver') ? { href: '#/clientes', rot: 'Clientes', ico: 'clientes' } : null,
-    pode('vendas.criar') ? { href: '#/vendas/nova', rot: 'Vender', ico: 'mais', meio: true } : null,
-    pode('estoque.ver') ? { href: '#/estoque', rot: 'Estoque', ico: 'estoque' } : null,
+    pode('vendas.criar') ? { href: '#/vendas/nova', rot: 'Vender', ico: 'mais', meio: true }
+      : pode('os.criar') ? { href: '#/os/nova', rot: 'Nova OS', ico: 'mais', meio: true } : null,
+    pode('os.ver') ? { href: '#/os', rot: 'OS', ico: 'ferramenta' } : null,
+    pode('estoque.ver') && !(pode('os.ver') && podeAlgum('financeiro.caixa', 'financeiro.ver')) ? { href: '#/estoque', rot: 'Estoque', ico: 'estoque' } : null,
     podeAlgum('financeiro.caixa', 'financeiro.ver') ? { href: '#/financas/caixa', rot: 'Caixa', ico: 'caixa' } : null,
   ].filter(Boolean);
   $('#barra-inferior').innerHTML = itens.map((i) => i.meio

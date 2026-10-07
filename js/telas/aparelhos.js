@@ -130,6 +130,7 @@ export async function ficha(el, ctx) {
     editar && '<button class="btn btn-primary" type="button" id="b-edit">Editar ficha</button>',
     editar && MOVEIS.includes(a.status) && '<button class="btn btn-ghost" type="button" id="b-status">Mudar situação</button>',
     a.status === 'em_teste' && pode('estoque.ajustar') && '<button class="btn btn-ghost" type="button" id="b-teste">Concluir teste</button>',
+    ['disponivel', 'em_teste', 'em_reparo'].includes(a.status) && editar && pode('os.criar') && '<button class="btn btn-ghost" type="button" id="b-os">Mandar para reparo (OS)</button>',
     a.status === 'disponivel' && pode('vendas.criar') && '<button class="btn btn-ghost" type="button" id="b-vender">Vender este aparelho</button>',
     a.status === 'disponivel' && pode('vendas.reservar') && '<button class="btn btn-ghost" type="button" id="b-reservar">Reservar com sinal</button>',
     a.status === 'reservado' && (pode('vendas.reservar') || pode('vendas.ver_todas')) && '<button class="btn btn-ghost" type="button" id="b-ver-res">Ver reserva</button>',
@@ -214,6 +215,10 @@ export async function ficha(el, ctx) {
     if (r) { toast('Teste registrado'); recarregar(); }
   });
   $('#b-vender', el)?.addEventListener('click', () => { estado.preAparelho = a.id; location.hash = '#/vendas/nova'; });
+  $('#b-os', el)?.addEventListener('click', async () => {
+    const { abrirInterna } = await import('./os.js');
+    const r = await abrirInterna(a); if (r) { toast(`OS interna nº ${r.numero} aberta`); location.hash = `#/os/${r.id}`; }
+  });
   $('#b-reservar', el)?.addEventListener('click', async () => {
     const { novaReserva } = await import('./orcamentos.js');
     const r = await novaReserva({ serieId: a.id }); if (r) location.hash = `#/vendas/reservas/${r.id}`;
@@ -315,7 +320,7 @@ async function editarFicha(a, itensCheck) {
 }
 
 // Foto reduzida (até 1280 px, JPEG) para guardar no banco
-function reduzirFoto(arq) {
+export function reduzirFoto(arq) {
   return new Promise((ok, falha) => {
     const img = new Image();
     img.onload = () => {

@@ -66,6 +66,10 @@ async function empresa(el, ctx) {
           <label>Garantia padrão (dias)<input name="garantia_padrao_dias" type="number" min="0" max="3650" value="${e.garantia_padrao_dias}"></label>
           <label>Alerta de cliente sem comprar (dias)<input name="dias_alerta_sem_compra" type="number" min="1" value="${e.dias_alerta_sem_compra}"></label>
           <label>Alerta de aparelho parado (dias)<input name="dias_alerta_aparelho_parado" type="number" min="1" max="3650" value="${e.dias_alerta_aparelho_parado ?? 60}"></label>
+          <label>Garantia do serviço de OS (dias)<input name="garantia_os_dias" type="number" min="0" max="3650" value="${e.garantia_os_dias ?? 90}"></label>
+          <label>OS sem retirada vira "abandonada" após (dias)<input name="dias_abandono_os" type="number" min="7" max="3650" value="${e.dias_abandono_os ?? 90}"></label>
+          <label class="col-2">Checklist de entrada da OS <span class="dica-campo muted">(um item por linha)</span><textarea name="checklist_os" rows="5">${esc((e.checklist_os || []).join('\n'))}</textarea></label>
+          <label class="col-2">Termos do comprovante de entrada da OS <span class="dica-campo muted">(impresso para o cliente assinar)</span><textarea name="texto_os_entrada" rows="3">${esc(e.texto_os_entrada || '')}</textarea></label>
           <label>Reserva: segurar aparelho por (dias)<input name="reserva_dias_padrao" type="number" min="1" max="90" value="${e.reserva_dias_padrao ?? 7}"></label>
           <label>Orçamento válido por (dias)<input name="orcamento_validade_dias" type="number" min="1" max="90" value="${e.orcamento_validade_dias ?? 7}"></label>
           <label class="col-2">Declaração do termo de compra/troca de aparelho <span class="dica-campo muted">(impressa no termo que o cliente assina)</span><textarea name="texto_termo_compra" rows="3">${esc(e.texto_termo_compra || '')}</textarea></label>
@@ -130,6 +134,10 @@ async function empresa(el, ctx) {
       uf: (v('uf') || '').toUpperCase() || null, logo, cor_primaria: f.cor_primaria.value, cor_sidebar: f.cor_sidebar.value, modo_tema: f.modo_tema.value,
       desconto_max_pct: desc, garantia_padrao_dias: Number(f.garantia_padrao_dias.value) || 0, dias_alerta_sem_compra: Number(f.dias_alerta_sem_compra.value) || 90,
       dias_alerta_aparelho_parado: Math.max(1, Number(f.dias_alerta_aparelho_parado.value) || 60),
+      garantia_os_dias: Math.min(3650, Math.max(0, Number(f.garantia_os_dias.value) || 0)),
+      dias_abandono_os: Math.min(3650, Math.max(7, Number(f.dias_abandono_os.value) || 90)),
+      checklist_os: [...new Set(f.checklist_os.value.split('\n').map((x) => x.trim()).filter(Boolean))],
+      texto_os_entrada: f.texto_os_entrada.value.trim() || null,
       reserva_dias_padrao: Math.min(90, Math.max(1, Number(f.reserva_dias_padrao.value) || 7)),
       orcamento_validade_dias: Math.min(90, Math.max(1, Number(f.orcamento_validade_dias.value) || 7)),
       texto_termo_compra: f.texto_termo_compra.value.trim() || null,

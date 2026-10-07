@@ -2,7 +2,8 @@
 import { estado, pode, esc, rpc, fmtMoeda, fmtPct, fmtNum, kpi, vazio, icone, hojeSP, nomeMes, fmtTelefone, linkZap, $, $$ } from '../core.js';
 
 export async function tela(el, ctx) {
-  const [p, ap] = await Promise.all([rpc('painel'), pode('estoque.ver') ? rpc('aparelhos_resumo').catch(() => null) : null]);
+  const [p, ap, os] = await Promise.all([rpc('painel'), pode('estoque.ver') ? rpc('aparelhos_resumo').catch(() => null) : null,
+    pode('os.ver') ? rpc('os_resumo').catch(() => null) : null]);
   if (!ctx.ativo()) return;
   estado.painel = p;
   const hora = Number(new Intl.DateTimeFormat('pt-BR', { hour: 'numeric', hour12: false, timeZone: 'America/Sao_Paulo' }).format(new Date()));
@@ -12,6 +13,7 @@ export async function tela(el, ctx) {
   // atalhos
   const atalhos = [
     pode('vendas.criar') && `<a class="btn btn-primary btn-lg" href="#/vendas/nova">${icone('vendas')} Nova venda</a>`,
+    pode('os.criar') && `<a class="btn btn-ghost btn-lg" href="#/os/nova">${icone('ferramenta')} Nova OS</a>`,
     pode('clientes.criar') && `<button class="btn btn-ghost btn-lg" type="button" data-novo-cliente>${icone('clientes')} Novo cliente</button>`,
     pode('financeiro.caixa') && `<a class="btn btn-ghost btn-lg" href="#/financas/caixa">${icone('caixa')} Caixa do dia</a>`,
     pode('estoque.ver') && `<a class="btn btn-ghost btn-lg" href="#/estoque">${icone('estoque')} Consultar estoque</a>`,
@@ -20,6 +22,10 @@ export async function tela(el, ctx) {
   // alertas
   const alertas = [];
   if (p.aguardando_aprovacao) alertas.push(`<a class="alerta" href="#/vendas/aprovacoes">${icone('alerta')}<span><b>${p.aguardando_aprovacao} venda(s) aguardando sua aprovação</b> — desconto acima do limite.</span></a>`);
+  if (os?.minhas) alertas.push(`<a class="alerta info" href="#/os">${icone('ferramenta')}<span><b>${os.minhas} OS na sua bancada</b>${os.atrasadas ? ` — ${os.atrasadas} atrasada(s)` : ''}.</span></a>`);
+  if (os?.prontas) alertas.push(`<a class="alerta info" href="#/os">${icone('ferramenta')}<span><b>${os.prontas} OS pronta(s) para retirada</b> — avise o cliente pelo WhatsApp.</span></a>`);
+  if (os?.aguardando_aprovacao) alertas.push(`<a class="alerta info" href="#/os">${icone('ferramenta')}<span><b>${os.aguardando_aprovacao} orçamento(s) de OS esperando resposta do cliente.</b></span></a>`);
+  if (os?.para_abandono) alertas.push(`<a class="alerta" href="#/os">${icone('alerta')}<span><b>${os.para_abandono} aparelho(s) sem retirada há mais de ${os.dias_abandono} dias</b> na assistência.</span></a>`);
   if (ap?.parados) alertas.push(`<a class="alerta" href="#/aparelhos">${icone('alerta')}<span><b>${ap.parados} aparelho(s) parado(s) há mais de ${ap.dias_alerta} dias</b> — vale revisar o preço.</span></a>`);
   if (ap?.em_teste) alertas.push(`<a class="alerta" href="#/aparelhos">${icone('alerta')}<span><b>${ap.em_teste} aparelho(s) em teste</b> esperando liberação.</span></a>`);
   if (p.pagar?.vencido) alertas.push(`<a class="alerta" href="#/financas/pagar">${icone('alerta')}<span><b>Contas a pagar vencidas: ${fmtMoeda(p.pagar.vencido)}</b></span></a>`);

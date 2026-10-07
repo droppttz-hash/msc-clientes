@@ -353,3 +353,20 @@ legend { font-size: 13px; font-weight: 600; padding: 0 6px; color: var(--text); 
   .sidebar, .topbar, .barra-inferior, .barra-acoes, .ferramentas { display: none !important; }
   .conteudo { padding: 0; }
 }
+
+/* ---------- Ordens de serviço ---------- */
+.padrao { display: grid; grid-template-columns: repeat(3, 56px); gap: 14px; padding: 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 14px; width: max-content; margin: 4px 0 8px; }
+.padrao button { width: 56px; height: 56px; border-radius: 50%; border: 2px solid var(--line-forte); background: var(--card); display: grid; place-items: center; cursor: pointer; padding: 0; color: var(--primary-fg); font-weight: 700; }
+.padrao button span { width: 14px; height: 14px; border-radius: 50%; background: var(--line-forte); display: grid; place-items: center; font-size: 11px; }
+.padrao button.on { border-color: var(--primary); }
+.padrao button.on span { background: var(--primary); width: 22px; height: 22px; }
+.padrao.mostrar { margin: 0 auto 10px; }
+.padrao.mostrar button { cursor: default; }
+.quadro-os { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr); gap: 12px; overflow-x: auto; padding: 12px; }
+.quadro-col { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 8px; display: flex; flex-direction: column; gap: 8px; min-height: 120px; }
+.quadro-topo { display: flex; justify-content: space-between; padding: 2px 4px 4px; }
+.quadro-card { display: grid; gap: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; color: var(--text); text-decoration: none; }
+.quadro-card:hover { border-color: var(--primary); }
+.form-os { max-width: 900px; display: grid; gap: 10px; }
+.form-os fieldset { margin: 4px 0; }
+@media (max-width: 860px) { .quadro-os { grid-auto-columns: 78vw; } .form-os .btn-lg { width: 100%; } }

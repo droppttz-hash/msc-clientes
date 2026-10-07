@@ -625,10 +625,11 @@ export async function dre(el, ctx) {
       ${kpi('Despesas', fmtMoeda(d.total_despesas))}${kpi('Resultado do mês', fmtMoeda(d.resultado), d.resultado >= 0 ? 'lucro' : 'prejuízo', d.resultado < 0 ? 'neg' : 'pos')}</div>
     <div class="grade-2" style="margin-top:16px;align-items:start">
     <div class="card" id="dre-tab"><div class="tabela-wrap"><table class="tabela"><thead><tr><th>${nomeMes(dreF.mes)}</th><th class="num">Valor</th><th class="num esconder-cel">%</th><th class="num esconder-cel">Mês anterior</th></tr></thead><tbody>
-      ${linha('Receita bruta de vendas', d.receita_bruta, ant.receita_bruta)}
+      ${d.receita_servicos || ant.receita_servicos ? `${linha('Receita de vendas', d.receita_vendas, ant.receita_vendas)}${linha('Receita de assistência técnica (OS)', d.receita_servicos, ant.receita_servicos)}` : linha('Receita bruta de vendas', d.receita_bruta, ant.receita_bruta)}
       ${linha('(−) Devoluções', d.devolucoes, ant.devolucoes, '', true)}
       ${linha('<b>= Receita líquida</b>', d.receita_liquida, ant.receita_liquida, 'forte')}
       ${linha('(−) Custo das mercadorias vendidas', d.cmv, ant.cmv, '', true)}
+      ${d.custo_pecas_os || ant.custo_pecas_os ? linha('(−) Peças usadas nas OS', d.custo_pecas_os, ant.custo_pecas_os, '', true) : ''}
       ${linha('(−) Taxas de cartão', d.taxas_cartao, ant.taxas_cartao, '', true)}
       ${linha('<b>= Lucro bruto</b>', d.lucro_bruto, ant.lucro_bruto, 'forte')}
       ${d.outras_receitas.map((x) => linha(`(+) ${esc(x.categoria)}`, x.valor, antCat(ant.outras_receitas, x.categoria))).join('')}
