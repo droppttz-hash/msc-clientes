@@ -10,6 +10,7 @@ const ST_TIT = { aberto: ['Em aberto', 'warn'], parcial: ['Pago em parte', 'warn
 const TIPO_CONTA = { caixa: 'Caixa (gaveta)', banco: 'Banco', maquininha: 'Maquininha', carteira: 'Carteira digital', outro: 'Outro' };
 const ORIGEM_MOV = { baixa: 'Pagamento/recebimento', taxa: 'Taxa de cartão', estorno_baixa: 'Estorno', estorno_taxa: 'Estorno de taxa', transferencia: 'Transferência', ajuste: 'Ajuste', quebra_caixa: 'Quebra/sobra de caixa' };
 const FREQ = { semanal: 'Semanal', mensal: 'Mensal', anual: 'Anual' };
+const AREAS = { aparelhos: 'Aparelhos', acessorios: 'Acessórios', informatica: 'Informática', assistencia: 'Assistência técnica', outros: 'Outros' };
 
 function abas(atual) {
   const itens = [
@@ -18,6 +19,7 @@ function abas(atual) {
     ['receber', 'A receber', '#/financas/receber', ['financeiro.ver']],
     ['pagar', 'A pagar', '#/financas/pagar', ['financeiro.ver']],
     ['extrato', 'Extrato', '#/financas/extrato', ['financeiro.ver']],
+    ['conciliacao', 'Conciliar banco', '#/financas/conciliacao', ['financeiro.conciliar']],
     ['fixas', 'Despesas fixas', '#/financas/fixas', ['financeiro.ver']],
     ['fluxo', 'Fluxo de caixa', '#/financas/fluxo', ['financeiro.relatorios']],
     ['dre', 'DRE', '#/financas/dre', ['financeiro.relatorios']],
@@ -117,7 +119,41 @@ export async function caixa(el, ctx) {
       </div></div>`;
   });
   el.innerHTML = `${abas('caixa')}${cabecalho('Caixa do dia', { sub: 'Abra o caixa de manhã, registre sangrias e suprimentos e feche contando o dinheiro da gaveta.' })}
-    ${blocos.length ? blocos.join('') : vazio('Nenhuma conta do tipo caixa', pode('config.gerenciar') ? 'Cadastre em Configurações › Pagamentos e contas.' : '')}`;
+    ${blocos.length ? blocos.join('') : vazio('Nenhuma conta do tipo caixa', pode('config.gerenciar') ? 'Cadastre em Configurações › Pagamentos e contas.' : '')}
+    <div class="card" id="conf-formas"><div class="card-topo"><h3>Conferência por forma de pagamento</h3>
+      <span style="display:flex;gap:6px;align-items:center"><input type="date" id="conf-data" value="${hojeSP()}" max="${hojeSP()}" style="margin:0;padding:6px 8px">
+      ${opera ? '<button class="btn btn-ghost btn-sm" type="button" id="b-conferir">Conferir</button>' : ''}</span></div>
+      <p class="muted pequeno card-pad" style="padding-top:0">Compare o que o sistema registrou em cada forma (PIX, débito, crédito…) com o relatório da maquininha e o extrato do banco.</p>
+      <div id="conf-tab">${carregando()}</div></div>`;
+  const carregarConf = async () => {
+    const dia = $('#conf-data', el).value;
+    let r;
+    try { r = await rpc('resumo_formas_dia', { p_data: dia }); } catch (err) { $('#conf-tab', el).innerHTML = vazio('Erro', esc(msgErro(err))); return; }
+    if (!ctx.ativo()) return;
+    $('#conf-tab', el).innerHTML = `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Forma</th><th class="num">No sistema</th><th class="num">Conferido</th><th class="num">Diferença</th></tr></thead><tbody>
+      ${r.map((x) => `<tr><td>${esc(x.nome)}<div class="muted pequeno">${x.qtd} venda(s)/OS${x.conferido_em ? ` · conferido por ${esc(x.conferido_por || '')} ${fmtDataHora(x.conferido_em)}` : ''}</div></td>
+        <td class="num">${fmtMoeda(x.sistema)}</td><td class="num">${x.informado == null ? '—' : fmtMoeda(x.informado)}</td>
+        <td class="num ${x.diferenca < 0 ? 'neg' : x.diferenca > 0 ? 'pos' : ''}">${x.diferenca == null ? '' : x.diferenca ? fmtMoedaSinal(x.diferenca) : 'bateu'}</td></tr>`).join('')}
+      </tbody></table></div>`;
+    $('#b-conferir', el)?.replaceWith($('#b-conferir', el).cloneNode(true));
+    $('#b-conferir', el)?.addEventListener('click', async () => {
+      const ok = await abrirModal({
+        titulo: `Conferir ${dia.split('-').reverse().join('/')}`, largura: 'md', botao: 'Salvar conferência',
+        corpo: `<p class="muted pequeno">Digite o total de cada forma no relatório da maquininha / banco. Deixe em branco o que não for conferir.</p>
+          <div class="tabela-wrap"><table class="tabela"><thead><tr><th>Forma</th><th class="num">Sistema</th><th class="num">Relatório</th></tr></thead><tbody>
+          ${r.map((x) => `<tr><td>${esc(x.nome)}</td><td class="num">${fmtMoeda(x.sistema)}</td><td class="num"><input data-forma="${x.forma}" data-mascara="dinheiro" inputmode="numeric" style="width:130px;margin:0"></td></tr>`).join('')}
+          </tbody></table></div><label>Observação<input name="obs" placeholder="Ex.: venda de R$ 50 passou em outra maquininha"></label>`,
+        aoSalvar: async (f) => {
+          const itens = $$('input[data-forma]', f).filter((i) => i.value.trim()).map((i) => ({ forma: i.dataset.forma, informado_centavos: valorDinheiro(i) }));
+          if (!itens.length) { f.erro('Informe pelo menos um valor.'); return false; }
+          return rpc('conferir_formas', { p_data: dia, p_itens: itens, p_obs: f.obs.value });
+        },
+      });
+      if (ok) { const dif = ok.filter((x) => x.diferenca); toast(dif.length ? `Conferência salva: ${dif.length} forma(s) com diferença` : 'Conferência salva: tudo bateu'); carregarConf(); }
+    });
+  };
+  $('#conf-data', el).addEventListener('change', carregarConf);
+  carregarConf();
 
   $$('[data-cx]', el).forEach((card) => {
     const conta = card.dataset.cx;
@@ -638,10 +674,118 @@ export async function dre(el, ctx) {
       <tr class="forte"><td><b>= Resultado (lucro ou prejuízo)</b></td><td class="num ${d.resultado < 0 ? 'neg' : 'pos'}"><b>${fmtMoedaSinal(d.resultado)}</b></td><td class="num esconder-cel">${pct(d.resultado)}</td><td class="num muted esconder-cel">${fmtMoedaSinal(ant.resultado)}</td></tr>
     </tbody></table></div>
     <p class="muted pequeno" style="padding:0 14px 14px">Compras de mercadoria (${fmtMoeda(d.compras_mercadoria)} no mês) não entram como despesa: o custo aparece quando o produto é vendido (CMV).</p></div>
+    <div>
+    ${d.por_area?.length ? `<div class="card" style="margin-bottom:16px"><div class="card-topo"><h3>Por área da loja</h3></div><div class="tabela-wrap"><table class="tabela"><thead><tr><th>Área</th><th class="num">Receita</th><th class="num esconder-cel">Custo</th><th class="num">Lucro bruto</th></tr></thead><tbody>
+      ${d.por_area.map((a) => { const liq = a.receita - a.devolucoes; return `<tr><td>${esc(AREAS[a.area] || a.area)}</td><td class="num">${fmtMoeda(liq)}</td><td class="num esconder-cel">${fmtMoeda(a.cmv)}</td><td class="num ${a.lucro < 0 ? 'neg' : ''}">${fmtMoeda(a.lucro)}${liq ? `<div class="muted pequeno">margem ${fmtPct((a.lucro / liq) * 100)}</div>` : ''}</td></tr>`; }).join('')}
+      </tbody></table></div><p class="muted pequeno" style="padding:0 14px 14px">Antes das taxas de cartão e das despesas. A área de cada produto vem da categoria (Configurações › Categorias).</p></div>` : ''}
     <div class="card"><div class="card-topo"><h3>Pelo caixa (dinheiro que entrou e saiu)</h3></div><div class="card-pad">
       <div class="kpis" style="margin:0 0 10px">${kpi('Entrou', `<span class="pos">${fmtMoeda(d.caixa.entradas)}</span>`)}${kpi('Saiu', `<span class="neg">${fmtMoeda(d.caixa.saidas)}</span>`)}</div>
       ${d.caixa.por_categoria.length ? `<div class="tabela-wrap"><table class="tabela"><tbody>${d.caixa.por_categoria.map((x) => `<tr><td>${esc(x.categoria)}</td><td class="num ${x.tipo === 'entrada' ? 'pos' : 'neg'}">${x.tipo === 'entrada' ? '+' : '−'} ${fmtMoeda(x.valor)}</td></tr>`).join('')}</tbody></table></div>` : vazio('Sem movimento', '')}
-    </div></div></div>`;
+    </div></div></div></div>`;
   $('#f-mes', el).addEventListener('change', (e) => { dreF.mes = e.target.value; dre(el, ctx); });
   $('#b-imp', el).addEventListener('click', async () => { const { imprimir } = await import('../core.js'); imprimir(`DRE — ${nomeMes(dreF.mes)}`, $('#dre-tab', el).innerHTML); });
+}
+
+// =====================================================================
+// CONCILIAÇÃO COM O EXTRATO DO BANCO (OFX)
+// =====================================================================
+// Lê o arquivo OFX (formato que todo banco exporta) e devolve os lançamentos
+export function lerOfx(texto) {
+  const tag = (bloco, t) => { const m = bloco.match(new RegExp(`<${t}>([^<\\r\\n]*)`, 'i')); return m ? m[1].trim() : ''; };
+  const blocos = texto.split(/<STMTTRN>/i).slice(1).map((b) => b.split(/<\/STMTTRN>/i)[0]);
+  return blocos.map((b) => {
+    const dt = tag(b, 'DTPOSTED'); const valor = Number(tag(b, 'TRNAMT').replace(',', '.'));
+    return { fitid: tag(b, 'FITID'), data: dt.length >= 8 ? `${dt.slice(0, 4)}-${dt.slice(4, 6)}-${dt.slice(6, 8)}` : '',
+      valor_centavos: Math.round(valor * 100), descricao: [tag(b, 'NAME'), tag(b, 'MEMO')].filter(Boolean).join(' — ').slice(0, 300) };
+  }).filter((l) => l.data && l.valor_centavos);
+}
+async function lerArquivoTexto(arq) {
+  const buf = await arq.arrayBuffer();
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch { return new TextDecoder('windows-1252').decode(buf); }
+}
+const ST_EXT = { pendente: ['Pendente', 'warn'], conciliado: ['Conciliado', 'ok'], ignorado: ['Ignorado', 'cinza'], lancado: ['Lançado agora', 'ok'] };
+const concF = { conta: '', status: 'pendente' };
+export async function conciliacao(el, ctx) {
+  if (!pode('financeiro.conciliar')) { el.innerHTML = vazio('Sem permissão', ''); return; }
+  const contas = (await listaCache('contas')).filter((c) => c.ativo && c.tipo !== 'caixa');
+  if (!ctx.ativo()) return;
+  if (!concF.conta || !contas.some((c) => c.id === concF.conta)) concF.conta = (contas.find((c) => c.tipo === 'banco') || contas[0])?.id || '';
+  el.innerHTML = `${abas('conciliacao')}${cabecalho('Conciliar com o banco', { sub: 'Importe o extrato do banco (arquivo OFX) e o sistema confere sozinho com o que já está lançado. O que sobrar você lança ou ignora.',
+    acoes: `<label class="btn btn-primary" style="cursor:pointer">${icone('mais')} Importar extrato (OFX)<input type="file" id="f-ofx" accept=".ofx,.OFX,application/x-ofx" hidden></label>` })}
+    <div class="card"><div class="ferramentas">
+      <select id="f-conta">${opcoes(contas, concF.conta, null)}</select>
+      <select id="f-st">${[['pendente', 'Pendentes'], ['conciliado', 'Conciliados'], ['lancado', 'Lançados agora'], ['ignorado', 'Ignorados'], ['', 'Todos']].map(([v, r]) => `<option value="${v}" ${concF.status === v ? 'selected' : ''}>${r}</option>`).join('')}</select>
+    </div><div id="kpis"></div><div id="tabela">${carregando()}</div></div>
+    <p class="muted pequeno">Onde achar o OFX: no app ou internet banking, em Extrato › Exportar › OFX (Money). Importar o mesmo período de novo não duplica.</p>`;
+  const carregar = async () => {
+    let dados, cont;
+    try {
+      [dados, cont] = await Promise.all([
+        buscarTudo(() => { let q = estado.sb.from('extrato_importado').select('*').eq('conta_id', concF.conta); if (concF.status) q = q.eq('status', concF.status); return q.order('data', { ascending: false }); }),
+        consulta(estado.sb.from('extrato_importado').select('status').eq('conta_id', concF.conta)),
+      ]);
+    } catch (err) { $('#tabela', el).innerHTML = vazio('Erro', esc(msgErro(err))); return; }
+    if (!ctx.ativo()) return;
+    const n = (st) => cont.filter((x) => x.status === st).length;
+    $('#kpis', el).innerHTML = `<div class="kpis" style="padding:0 14px">${kpi('Pendentes', String(n('pendente')), 'no extrato e não no sistema', n('pendente') ? 'neg' : '')}${kpi('Conciliados', String(n('conciliado') + n('lancado')))}${kpi('Ignorados', String(n('ignorado')))}</div>`;
+    if (!dados.length) { $('#tabela', el).innerHTML = vazio(concF.status === 'pendente' ? 'Nada pendente' : 'Nada aqui', 'Importe o arquivo OFX do banco.'); return; }
+    $('#tabela', el).innerHTML = `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Data</th><th>Descrição no banco</th><th class="num">Valor</th><th>Situação</th><th></th></tr></thead><tbody>
+      ${dados.map((x) => `<tr><td>${fmtData(x.data)}</td><td>${esc(x.descricao || '')}</td><td class="num ${x.valor_centavos < 0 ? 'neg' : 'pos'}">${fmtMoedaSinal(x.valor_centavos)}</td>
+        <td>${tag(...ST_EXT[x.status])}</td><td class="num" style="white-space:nowrap">${x.status === 'pendente'
+    ? `<button class="link-btn" data-lancar="${x.id}">lançar</button> · <button class="link-btn" data-vincular="${x.id}">vincular</button> · <button class="link-btn" data-ignorar="${x.id}">ignorar</button>`
+    : ['conciliado', 'ignorado'].includes(x.status) ? `<button class="link-btn" data-desfazer="${x.id}">desfazer</button>` : ''}</td></tr>`).join('')}
+      </tbody></table></div>`;
+    const acao = async (fn, args, msg) => { try { await rpc(fn, args); toast(msg); carregar(); } catch (err) { toast(msgErro(err), 'erro'); } };
+    $$('[data-ignorar]', el).forEach((b) => b.addEventListener('click', () => acao('ignorar_extrato', { p_id: b.dataset.ignorar }, 'Ignorado')));
+    $$('[data-desfazer]', el).forEach((b) => b.addEventListener('click', () => acao('desfazer_extrato', { p_id: b.dataset.desfazer }, 'Voltou para pendente')));
+    $$('[data-lancar]', el).forEach((b) => b.addEventListener('click', async () => {
+      const x = dados.find((y) => y.id === b.dataset.lancar);
+      const cats = (await listaCache('categorias')).filter((c) => c.ativo && c.tipo === (x.valor_centavos < 0 ? 'despesa' : 'receita'));
+      const ok = await abrirModal({
+        titulo: x.valor_centavos < 0 ? 'Lançar saída do banco' : 'Lançar entrada do banco', largura: 'sm', botao: 'Lançar',
+        corpo: `<p>${fmtData(x.data)} · <b class="${x.valor_centavos < 0 ? 'neg' : 'pos'}">${fmtMoedaSinal(x.valor_centavos)}</b><br><span class="muted">${esc(x.descricao || '')}</span></p>
+          <label>Descrição<input name="d" value="${esc(x.descricao || '')}"></label>
+          <label>Categoria *<select name="c"><option value="">Escolha…</option>${cats.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></label>
+          <p class="muted pequeno">Cria a conta a ${x.valor_centavos < 0 ? 'pagar' : 'receber'} já paga nesta data, saindo/entrando nesta conta.</p>`,
+        aoSalvar: async (f) => { if (!f.c.value) { f.erro('Escolha a categoria.'); return false; } await rpc('lancar_extrato', { p_id: x.id, p_categoria: f.c.value, p_descricao: f.d.value }); return true; },
+      });
+      if (ok) { toast('Lançado'); carregar(); }
+    }));
+    $$('[data-vincular]', el).forEach((b) => b.addEventListener('click', async () => {
+      const x = dados.find((y) => y.id === b.dataset.vincular);
+      const ini = somarDias(x.data, -10); const fim = somarDias(x.data, 10);
+      const [movs, ligados] = await Promise.all([
+        consulta(estado.sb.from('movimentos_financeiros').select('id,data,descricao,valor_centavos,tipo').eq('conta_id', x.conta_id).eq('tipo', x.valor_centavos < 0 ? 'saida' : 'entrada').gte('data', ini).lte('data', fim).order('data')),
+        consulta(estado.sb.from('extrato_importado').select('movimento_id').eq('conta_id', x.conta_id).not('movimento_id', 'is', null)),
+      ]);
+      const livres = movs.filter((m) => !ligados.some((l) => l.movimento_id === m.id));
+      const ok = await abrirModal({
+        titulo: 'Vincular a um lançamento do sistema', largura: 'md', botao: null, cancelar: 'Fechar',
+        corpo: `<p>${fmtData(x.data)} · <b>${fmtMoedaSinal(x.valor_centavos)}</b> · <span class="muted">${esc(x.descricao || '')}</span></p>
+          ${livres.length ? `<div class="busca-resultados" style="padding:0">${livres.map((m) => `<a href="#" data-m="${m.id}"><span><b>${esc(m.descricao)}</b><small>${fmtData(m.data)}</small></span><b class="${Math.abs(x.valor_centavos) === m.valor_centavos ? 'pos' : ''}">${fmtMoeda(m.valor_centavos)}</b></a>`).join('')}</div>`
+    : '<p class="muted">Nenhum lançamento livre desta conta em 10 dias antes ou depois.</p>'}`,
+        aoAbrir: (f) => f.addEventListener('click', async (e) => {
+          const a = e.target.closest('a[data-m]'); if (!a) return; e.preventDefault();
+          try { await rpc('conciliar_extrato', { p_id: x.id, p_movimento: Number(a.dataset.m) }); f.fechar(true); } catch (err) { f.erro(msgErro(err)); }
+        }),
+      });
+      if (ok) { toast('Vinculado'); carregar(); }
+    }));
+  };
+  $('#f-conta', el).addEventListener('change', (e) => { concF.conta = e.target.value; carregar(); });
+  $('#f-st', el).addEventListener('change', (e) => { concF.status = e.target.value; carregar(); });
+  $('#f-ofx', el).addEventListener('change', async (e) => {
+    const arq = e.target.files[0]; e.target.value = '';
+    if (!arq) return;
+    try {
+      const linhas = lerOfx(await lerArquivoTexto(arq));
+      if (!linhas.length) { toast('Não achei lançamentos neste arquivo. Confira se é um OFX.', 'erro'); return; }
+      const conta = contas.find((c) => c.id === concF.conta);
+      if (!(await confirmar({ titulo: 'Importar extrato', texto: `${linhas.length} lançamento(s) de ${fmtData(linhas.map((l) => l.data).sort()[0])} a ${fmtData(linhas.map((l) => l.data).sort().pop())} na conta <b>${esc(conta?.nome || '')}</b>. Confirma?`, botao: 'Importar' }))) return;
+      const r = await rpc('importar_extrato', { p_conta: concF.conta, p_linhas: linhas });
+      toast(`${r.novos} novo(s), ${r.repetidos} já importado(s); ${r.conciliados} conferido(s) sozinho(s); ${r.pendentes} pendente(s)`);
+      concF.status = 'pendente'; conciliacao(el, ctx);
+    } catch (err) { toast(msgErro(err), 'erro'); }
+  });
+  carregar();
 }

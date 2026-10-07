@@ -22,7 +22,7 @@ function novoCarrinho() {
 export async function nova(el, ctx) {
   if (!pode('vendas.criar')) { el.innerHTML = vazio('Sem permissão', 'Seu usuário não pode fazer vendas.'); return; }
   if (!carrinho || estado.preCliente || estado.preOrcamento || estado.preReserva) novoCarrinho();
-  const [formas, categorias] = await Promise.all([listaCache('formas'), listaCache('categorias')]);
+  const [formas, categorias, bandeiras] = await Promise.all([listaCache('formas'), listaCache('categorias'), listaCache('bandeiras').catch(() => [])]);
   if (!ctx.ativo()) return;
   const formasAtivas = formas.filter((f) => f.ativo && !f.interna);
   if (!carrinho.trocas) Object.assign(carrinho, { trocas: [], reserva: null, orcamento: null });
@@ -141,6 +141,7 @@ export async function nova(el, ctx) {
     box.innerHTML = carrinho.pagamentos.map((p, k) => `<div class="pag-linha">
       <select data-pk="${k}" data-campo="forma">${formasAtivas.map((f) => `<option value="${f.forma}" ${f.forma === p.forma ? 'selected' : ''}>${esc(f.nome)}</option>`).join('')}</select>
       <input data-pk="${k}" data-campo="valor" data-mascara="dinheiro" inputmode="numeric" value="${fmtMoeda(p.valor)}">
+      ${['debito', 'credito'].includes(p.forma) && bandeiras.length ? `<select data-pk="${k}" data-campo="bandeira" title="Bandeira do cartão"><option value="">Bandeira…</option>${bandeiras.map((b) => `<option value="${b.codigo}" ${p.bandeira === b.codigo ? 'selected' : ''}>${esc(b.nome)}</option>`).join('')}</select>` : ''}
       ${PARCELAVEL.includes(p.forma) ? `<select data-pk="${k}" data-campo="parcelas">${Array.from({ length: 12 }, (_, n) => `<option value="${n + 1}" ${p.parcelas === n + 1 ? 'selected' : ''}>${n + 1}x</option>`).join('')}</select>` : '<span></span>'}
       ${carrinho.pagamentos.length > 1 ? `<button class="link-btn perigo" type="button" data-prem="${k}">✕</button>` : '<span></span>'}
     </div>
@@ -152,6 +153,7 @@ export async function nova(el, ctx) {
       if (inp.dataset.campo === 'valor') { p.valor = valorDinheiro(inp); p.editado = true; }
       if (inp.dataset.campo === 'parcelas') p.parcelas = Number(inp.value);
       if (inp.dataset.campo === 'venc') p.venc = inp.value;
+      if (inp.dataset.campo === 'bandeira') p.bandeira = inp.value || null;
       resumo();
     }));
     $$('[data-prem]', box).forEach((b) => b.addEventListener('click', () => { carrinho.pagamentos.splice(Number(b.dataset.prem), 1); resumo(); }));
@@ -337,7 +339,7 @@ export async function nova(el, ctx) {
         chave: carrinho.chave, cliente_id: carrinho.cliente?.id || null, observacao: carrinho.observacao, desconto_centavos: carrinho.descontoGeral,
         itens: carrinho.itens.map((i) => ({ produto_id: i.produtoId || null, serie_id: i.serieId || null, descricao: i.descricao, categoria_id: i.categoriaId || null,
           quantidade: i.qtd, preco_unitario_centavos: i.preco, garantia_dias: i.garantia ?? null })),
-        pagamentos: pags.map((p) => ({ forma: p.forma, valor_centavos: p.valor, parcelas: p.parcelas || 1, primeiro_vencimento: ['crediario', 'boleto'].includes(p.forma) ? (p.venc || somarDias(hojeSP(), 30)) : null })),
+        pagamentos: pags.map((p) => ({ forma: p.forma, valor_centavos: p.valor, parcelas: p.parcelas || 1, bandeira: ['debito', 'credito'].includes(p.forma) ? p.bandeira || null : null, primeiro_vencimento: ['crediario', 'boleto'].includes(p.forma) ? (p.venc || somarDias(hojeSP(), 30)) : null })),
         trocas: carrinho.trocas.map(({ produto_nome, ...t }) => t), reserva_id: carrinho.reserva?.id || null, orcamento_id: carrinho.orcamento?.id || null,
       } });
       const troco = -(aPagar() - carrinho.pagamentos.reduce((s, p) => s + p.valor, 0));

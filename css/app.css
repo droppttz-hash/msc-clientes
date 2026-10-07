@@ -370,3 +370,4 @@ legend { font-size: 13px; font-weight: 600; padding: 0 6px; color: var(--text); 
 .form-os { max-width: 900px; display: grid; gap: 10px; }
 .form-os fieldset { margin: 4px 0; }
 @media (max-width: 860px) { .quadro-os { grid-auto-columns: 78vw; } .form-os .btn-lg { width: 100%; } }
+.pag-linha select[data-campo="bandeira"], .pag-linha select[data-c="band"] { grid-column: 1 / -1; order: 5; }

@@ -592,6 +592,7 @@ async function editarOrcamento(o, itensAtuais) {
 // ---------------------------------------------------------------------
 async function entregar(o) {
   const formas = (await listaCache('formas')).filter((f) => f.ativo && !f.interna);
+  const bandeiras = await listaCache('bandeiras').catch(() => []);
   const reparou = o.status === 'pronta';
   let total = reparou ? o.total_centavos : o.taxa_diagnostico_centavos;
   const pags = total ? [{ forma: formas.find((f) => f.forma === 'pix') ? 'pix' : formas[0]?.forma, valor: total, parcelas: 1 }] : [];
@@ -617,6 +618,7 @@ async function entregar(o) {
         box.innerHTML = pags.map((p, k) => `<div class="pag-linha">
           <select data-pk="${k}" data-c="forma">${formas.map((x) => `<option value="${x.forma}" ${x.forma === p.forma ? 'selected' : ''}>${esc(x.nome)}</option>`).join('')}</select>
           <input data-pk="${k}" data-c="valor" data-mascara="dinheiro" inputmode="numeric" value="${fmtMoeda(p.valor)}">
+          ${['debito', 'credito'].includes(p.forma) && bandeiras.length ? `<select data-pk="${k}" data-c="band"><option value="">Bandeira…</option>${bandeiras.map((b) => `<option value="${b.codigo}" ${p.bandeira === b.codigo ? 'selected' : ''}>${esc(b.nome)}</option>`).join('')}</select>` : ''}
           ${PARCELAVEL.includes(p.forma) ? `<select data-pk="${k}" data-c="parc">${Array.from({ length: 12 }, (_, n) => `<option value="${n + 1}" ${p.parcelas === n + 1 ? 'selected' : ''}>${n + 1}x</option>`).join('')}</select>` : '<span></span>'}
           <button type="button" class="link-btn perigo" data-rem="${k}">✕</button></div>`).join('');
         $$('[data-pk]', box).forEach((i) => i.addEventListener('change', () => {
@@ -624,6 +626,7 @@ async function entregar(o) {
           if (i.dataset.c === 'forma') { p.forma = i.value; if (!PARCELAVEL.includes(p.forma)) p.parcelas = 1; desenhar(); }
           if (i.dataset.c === 'valor') p.valor = valorDinheiro(i);
           if (i.dataset.c === 'parc') p.parcelas = Number(i.value);
+          if (i.dataset.c === 'band') p.bandeira = i.value || null;
           conferir();
         }));
         $$('[data-rem]', box).forEach((b) => b.addEventListener('click', () => { pags.splice(Number(b.dataset.rem), 1); desenhar(); }));
@@ -636,7 +639,7 @@ async function entregar(o) {
     aoSalvar: async (f) => {
       const ps = pags.filter((p) => p.valor > 0);
       await rpc('entregar_os', { p: { id: o.id, ...(reparou ? { desconto_centavos: valorDinheiro(f.desc) } : {}),
-        pagamentos: ps.map((p) => ({ forma: p.forma, valor_centavos: p.valor, parcelas: p.parcelas || 1, primeiro_vencimento: ['crediario', 'boleto'].includes(p.forma) ? somarDias(hojeSP(), 30) : null })) } });
+        pagamentos: ps.map((p) => ({ forma: p.forma, valor_centavos: p.valor, parcelas: p.parcelas || 1, bandeira: ['debito', 'credito'].includes(p.forma) ? p.bandeira || null : null, primeiro_vencimento: ['crediario', 'boleto'].includes(p.forma) ? somarDias(hojeSP(), 30) : null })) } });
       toast('OS entregue');
       return true;
     },

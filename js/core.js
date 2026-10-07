@@ -162,6 +162,7 @@ export async function lista(nome, recarregar = false) {
     contas: () => estado.sb.from('contas_financeiras').select('*').order('ordem').order('nome'),
     fornecedores: () => estado.sb.from('fornecedores').select('id,nome,telefone,ativo').order('nome'),
     perfis: () => estado.sb.from('perfis').select('user_id,nome,cargo,ativo').order('nome'),
+    bandeiras: () => estado.sb.from('bandeiras').select('codigo,nome,ativo').eq('ativo', true).order('ordem'),
   }[nome];
   estado.cache[nome] = await consulta(q());
   return estado.cache[nome];

@@ -45,10 +45,13 @@ const MENU = [
     { rotulo: 'Contas a receber', href: '#/financas/receber', perm: ['financeiro.ver'] },
     { rotulo: 'Contas a pagar', href: '#/financas/pagar', perm: ['financeiro.ver'], badge: 'pagar_vencido' },
     { rotulo: 'Extrato das contas', href: '#/financas/extrato', perm: ['financeiro.ver'] },
+    { rotulo: 'Conciliar com o banco', href: '#/financas/conciliacao', perm: ['financeiro.conciliar'] },
+    { rotulo: 'Comissões', href: '#/comissoes', perm: ['comissoes.gerir'] },
     { rotulo: 'Despesas fixas', href: '#/financas/fixas', perm: ['financeiro.ver'] },
     { rotulo: 'Fluxo de caixa', href: '#/financas/fluxo', perm: ['financeiro.relatorios'] },
     { rotulo: 'DRE (resultado)', href: '#/financas/dre', perm: ['financeiro.relatorios'] },
   ] },
+  { id: 'comissao', rotulo: 'Minha comissão', icone: 'financas', href: '#/comissoes', perm: ['comissoes.ver_proprias'], esconder: ['comissoes.gerir'] },
   { id: 'config', rotulo: 'Configurações', icone: 'config', perm: ['config.gerenciar', 'auditoria.ver'], filhos: [
     { rotulo: 'Empresa e aparência', href: '#/config/empresa', perm: ['config.gerenciar'] },
     { rotulo: 'Usuários', href: '#/config/usuarios', perm: ['config.gerenciar'] },
@@ -98,6 +101,8 @@ const ROTAS = [
   [/^#\/financas\/fixas$/, 'financas', 'fixas'],
   [/^#\/financas\/fluxo$/, 'financas', 'fluxo'],
   [/^#\/financas\/dre$/, 'financas', 'dre'],
+  [/^#\/financas\/conciliacao$/, 'financas', 'conciliacao'],
+  [/^#\/comissoes$/, 'comissoes', 'tela'],
   [/^#\/config\/(empresa|usuarios|permissoes|categorias|pagamentos|auditoria)$/, 'config', 'tela'],
 ];
 const MODULOS = {
@@ -109,6 +114,7 @@ const MODULOS = {
   orcamentos: () => import('./telas/orcamentos.js'),
   compras: () => import('./telas/compras.js'),
   os: () => import('./telas/os.js'),
+  comissoes: () => import('./telas/comissoes.js'),
   financas: () => import('./telas/financas.js'),
   config: () => import('./telas/config.js'),
 };
@@ -157,7 +163,7 @@ export const aindaEm = (prefixo) => (location.hash || '#/inicio').startsWith(pre
 // ---------------------------------------------------------------------
 // Menu lateral
 // ---------------------------------------------------------------------
-const visivel = (item) => !item.perm || podeAlgum(...item.perm);
+const visivel = (item) => (!item.perm || podeAlgum(...item.perm)) && !(item.esconder && podeAlgum(...item.esconder));
 let abertos = new Set();
 try { abertos = new Set(JSON.parse(localStorage.getItem('menu-abertos') || '[]')); } catch { /* ok */ }
 

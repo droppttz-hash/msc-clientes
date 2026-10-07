@@ -195,6 +195,9 @@ async function usuarios(el, ctx) {
         <label>Cargo<select name="cargo">${Object.entries(CARGOS).map(([k, v]) => `<option value="${k}" ${p.cargo === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
         <p class="muted pequeno" data-cargo-txt></p>
         <label>Meta de vendas por mês<input name="meta" data-mascara="dinheiro" inputmode="numeric" value="${p.meta_mensal_centavos ? fmtMoeda(p.meta_mensal_centavos) : ''}"></label>
+        <div class="form-grade"><label>Comissão sobre vendas (%)<input name="cv" inputmode="decimal" value="${String(Number(p.comissao_venda_pct || 0)).replace('.', ',')}"></label>
+          <label>Comissão sobre mão de obra das OS (%)<input name="co" inputmode="decimal" value="${String(Number(p.comissao_os_pct || 0)).replace('.', ',')}"></label></div>
+        <p class="muted pequeno">A comissão é só uma sugestão: você confere, ajusta e fecha o mês em Comissões.</p>
         <label class="check"><input type="checkbox" name="ativo" ${p.ativo ? 'checked' : ''} ${eu ? 'disabled' : ''}> Pode entrar no sistema</label>
         ${eu ? '<p class="muted pequeno">Você não pode bloquear o próprio acesso.</p>' : ''}`,
       aoAbrir: (f) => {
@@ -206,7 +209,10 @@ async function usuarios(el, ctx) {
         const tel = soDigitos(f.telefone.value);
         if (tel && (tel.length < 10 || tel.length > 11)) { f.erro('Telefone com DDD (10 ou 11 números).'); return false; }
         if (eu && f.cargo.value !== 'gerente' && !(await confirmar({ titulo: 'Tirar seu próprio acesso de gerente?', texto: 'Você deixará de ver as configurações. Só outro gerente poderá desfazer.', botao: 'Sim, mudar', perigo: true }))) return false;
+        const cv = lerNumero(f.cv.value); const co = lerNumero(f.co.value);
+        if (cv < 0 || cv > 100 || co < 0 || co > 100) { f.erro('Comissão entre 0 e 100%.'); return false; }
         await consulta(estado.sb.from('perfis').update({ nome: f.nome.value.trim(), telefone: tel || null, cargo: f.cargo.value, meta_mensal_centavos: valorDinheiro(f.meta) || null,
+          comissao_venda_pct: cv, comissao_os_pct: co,
           ativo: eu ? true : f.ativo.checked }).eq('user_id', p.user_id).select('user_id'));
         return true;
       },
@@ -254,24 +260,28 @@ async function categorias(el, ctx) {
   const cats = await listaCache('categorias', true);
   if (!ctx.ativo()) return;
   const TIPOS = { venda: 'De produtos (vendas)', despesa: 'De despesas', receita: 'De receitas' };
+  const AREAS = { aparelhos: 'Aparelhos', acessorios: 'Acessórios', informatica: 'Informática', assistencia: 'Assistência técnica', outros: 'Outros' };
   const l = cats.filter((c) => c.tipo === catTipo);
   el.innerHTML = `${abas('categorias')}${cabecalho('Categorias', { sub: 'Organizam produtos, despesas e receitas nos relatórios.', acoes: `<button class="btn btn-primary" id="b-nova" type="button">${icone('mais')} Nova categoria</button>` })}
     <div class="abas-pagina" style="border:0">${Object.entries(TIPOS).map(([k, v]) => `<button type="button" data-tipo="${k}" class="${k === catTipo ? 'ativa' : ''}">${v}</button>`).join('')}</div>
-    <div class="card">${l.length ? `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Nome</th><th class="num">Ordem</th><th>Situação</th></tr></thead><tbody>
-      ${l.map((c) => `<tr class="clicavel" data-id="${c.id}"><td>${esc(c.nome)}${c.sistema ? ' ' + tag('usada pelo sistema', 'cinza') : ''}</td><td class="num">${c.ordem}</td><td>${c.ativo ? tag('Ativa', 'ok') : tag('Inativa', 'cinza')}</td></tr>`).join('')}
+    <div class="card">${l.length ? `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Nome</th>${catTipo === 'venda' ? '<th>Área</th>' : ''}<th class="num">Ordem</th><th>Situação</th></tr></thead><tbody>
+      ${l.map((c) => `<tr class="clicavel" data-id="${c.id}"><td>${esc(c.nome)}${c.sistema ? ' ' + tag('usada pelo sistema', 'cinza') : ''}</td>${catTipo === 'venda' ? `<td>${esc(AREAS[c.area] || '—')}</td>` : ''}<td class="num">${c.ordem}</td><td>${c.ativo ? tag('Ativa', 'ok') : tag('Inativa', 'cinza')}</td></tr>`).join('')}
     </tbody></table></div>` : vazio('Nenhuma categoria')}</div>`;
   $$('[data-tipo]', el).forEach((b) => b.addEventListener('click', () => { catTipo = b.dataset.tipo; categorias(el, ctx); }));
   const form = async (c) => {
     const ok = await abrirModal({
       titulo: c ? 'Editar categoria' : 'Nova categoria', largura: 'sm',
+      aoAbrir: (f) => f.tipo.addEventListener('change', () => { $('[data-area]', f).hidden = f.tipo.value !== 'venda'; }),
       corpo: `<label>Nome *<input name="nome" value="${esc(c?.nome)}"></label>
         <label>Tipo<select name="tipo" ${c ? 'disabled' : ''}>${Object.entries(TIPOS).map(([k, v]) => `<option value="${k}" ${(c?.tipo || catTipo) === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+        <label data-area ${(c?.tipo || catTipo) === 'venda' ? '' : 'hidden'}>Área da loja (para o DRE por área)<select name="area">${Object.entries(AREAS).map(([k, v]) => `<option value="${k}" ${(c?.area || 'outros') === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
         <label>Ordem na lista<input name="ordem" type="number" value="${c?.ordem ?? 50}"></label>
         ${c && !c.sistema ? `<label class="check"><input type="checkbox" name="ativo" ${c.ativo ? 'checked' : ''}> Ativa</label>` : ''}
         ${c?.sistema ? '<p class="muted pequeno">Esta categoria é usada automaticamente pelo sistema e não pode ser desativada.</p>' : ''}`,
       aoSalvar: async (f) => {
         if (f.nome.value.trim().length < 2) { f.erro('Informe o nome.'); return false; }
         const d = { nome: f.nome.value.trim(), ordem: Number(f.ordem.value) || 0 };
+        if ((c?.tipo || f.tipo.value) === 'venda') d.area = f.area.value;
         if (c) { if (f.ativo) d.ativo = f.ativo.checked; await consulta(estado.sb.from('categorias').update(d).eq('id', c.id).select('id')); }
         else await consulta(estado.sb.from('categorias').insert({ ...d, tipo: f.tipo.value }).select('id'));
         return true;
@@ -288,9 +298,10 @@ async function categorias(el, ctx) {
 // =====================================================================
 const TIPO_CONTA = { caixa: 'Caixa (gaveta)', banco: 'Banco', maquininha: 'Maquininha', carteira: 'Carteira digital', outro: 'Outro' };
 async function pagamentos(el, ctx) {
-  const [formas, taxas, contas, saldos] = await Promise.all([
+  const [formas, taxas, contas, saldos, bands, btaxas] = await Promise.all([
     listaCache('formas', true), consulta(estado.sb.from('credito_taxas').select('*').order('parcelas')), listaCache('contas', true),
     consulta(estado.sb.from('saldos_contas').select('id,saldo_centavos')),
+    consulta(estado.sb.from('bandeiras').select('*').order('ordem')), consulta(estado.sb.from('bandeira_taxas').select('*')),
   ]);
   if (!ctx.ativo()) return;
   const saldoDe = (id) => saldos.find((s) => s.id === id)?.saldo_centavos ?? 0;
@@ -308,6 +319,9 @@ async function pagamentos(el, ctx) {
         <div class="tabela-wrap"><table class="tabela"><thead><tr><th>Parcelas</th><th class="num">Taxa total</th></tr></thead><tbody>
         ${taxas.map((t) => `<tr><td>${t.parcelas}x</td><td class="num">${pct(t.taxa_pct)}</td></tr>`).join('')}</tbody></table></div>
         ${taxas.every((t) => !Number(t.taxa_pct)) ? '<p class="neg pequeno" style="padding:0 14px 14px">As taxas ainda estão zeradas: confira no app da sua maquininha e preencha para o lucro ficar certo.</p>' : ''}</div>
+      <div class="card"><div class="card-topo"><h3>Taxas por bandeira</h3><button class="btn btn-ghost btn-sm" type="button" id="b-bandeiras">Editar</button></div>
+        <p class="muted pequeno card-pad" style="padding-top:0">Se a maquininha cobra diferente por bandeira (ex.: Elo e Amex mais caros), cadastre aqui. Em branco = usa a taxa padrão acima. O vendedor escolhe a bandeira no pagamento.</p>
+        ${btaxas.length ? `<div class="tabela-wrap"><table class="tabela"><tbody>${bands.filter((b) => btaxas.some((t) => t.bandeira === b.codigo)).map((b) => `<tr><td><b>${esc(b.nome)}</b></td><td class="pequeno">${btaxas.filter((t) => t.bandeira === b.codigo).sort((x, y) => (x.forma > y.forma ? -1 : 1) || x.parcelas - y.parcelas).map((t) => `${t.forma === 'debito' ? 'débito' : `${t.parcelas}x`} ${pct(t.taxa_pct)}`).join(' · ')}</td></tr>`).join('')}</tbody></table></div>` : ''}</div>
       <div class="card"><div class="card-topo"><h3>Contas (onde o dinheiro fica)</h3><button class="btn btn-ghost btn-sm" type="button" id="b-conta">${icone('mais')} Nova conta</button></div>
         <div class="tabela-wrap"><table class="tabela"><tbody>
         ${contas.map((c) => `<tr class="clicavel" data-conta="${c.id}"><td><b>${esc(c.nome)}</b><div class="muted pequeno">${TIPO_CONTA[c.tipo]}${c.ativo ? '' : ' · inativa'}</div></td><td class="num">${fmtMoeda(saldoDe(c.id))}</td></tr>`).join('')}
@@ -359,6 +373,32 @@ async function pagamentos(el, ctx) {
       },
     });
     if (ok) { toast('Taxas salvas'); pagamentos(el, ctx); }
+  });
+
+  $('#b-bandeiras', el).addEventListener('click', async () => {
+    const val = (b, forma, n) => { const t = btaxas.find((x) => x.bandeira === b && x.forma === forma && x.parcelas === n); return t ? String(Number(t.taxa_pct)).replace('.', ',') : ''; };
+    const ok = await abrirModal({
+      titulo: 'Taxas por bandeira', largura: 'lg',
+      corpo: `<p class="muted pequeno">Deixe em branco para usar a taxa padrão. Valores em %.</p>
+        <div class="tabela-wrap"><table class="tabela"><thead><tr><th>Bandeira</th><th>Débito</th>${Array.from({ length: 12 }, (_, i) => `<th>${i + 1}x</th>`).join('')}</tr></thead><tbody>
+        ${bands.filter((b) => b.ativo).map((b) => `<tr><td><b>${esc(b.nome)}</b></td><td><input data-b="${b.codigo}" data-f="debito" data-n="1" value="${val(b.codigo, 'debito', 1)}" inputmode="decimal" style="width:62px;margin:0"></td>
+          ${Array.from({ length: 12 }, (_, i) => `<td><input data-b="${b.codigo}" data-f="credito" data-n="${i + 1}" value="${val(b.codigo, 'credito', i + 1)}" inputmode="decimal" style="width:62px;margin:0"></td>`).join('')}</tr>`).join('')}
+        </tbody></table></div>`,
+      aoSalvar: async (f) => {
+        const ins = []; const del = [];
+        for (const inp of $$('input[data-b]', f)) {
+          const k = { bandeira: inp.dataset.b, forma: inp.dataset.f, parcelas: Number(inp.dataset.n) };
+          if (inp.value.trim() === '') { if (btaxas.some((t) => t.bandeira === k.bandeira && t.forma === k.forma && t.parcelas === k.parcelas)) del.push(k); continue; }
+          const v = lerNumero(inp.value);
+          if (v < 0 || v > 100) { f.erro('Taxa entre 0 e 100%.'); return false; }
+          ins.push({ ...k, taxa_pct: v });
+        }
+        for (const k of del) await consulta(estado.sb.from('bandeira_taxas').delete().eq('bandeira', k.bandeira).eq('forma', k.forma).eq('parcelas', k.parcelas));
+        if (ins.length) await consulta(estado.sb.from('bandeira_taxas').upsert(ins).select('bandeira'));
+        return true;
+      },
+    });
+    if (ok) { limparCache('bandeiras'); toast('Taxas por bandeira salvas'); pagamentos(el, ctx); }
   });
 
   const formConta = async (c) => {
